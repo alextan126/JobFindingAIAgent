@@ -9,9 +9,12 @@ from typing import Tuple
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
+from langchain_core.tools import tool
+from tools import fetch_jobs, compare_jds
 
 
-load_dotenv()
+
+
 
 
 def build_model() -> ChatOpenAI:
@@ -24,11 +27,17 @@ def build_model() -> ChatOpenAI:
 
 def build_agent() -> Tuple[object, ChatOpenAI]:
     model = build_model()
-    tools = []  # Placeholder: add tools as you implement them
+    tools = [fetch_jobs, compare_jds]  
     agent = create_react_agent(model, tools)
     return agent, model
 
 
+
 if __name__ == "__main__":
     agent, _ = build_agent()
-    print("Agent initialized. Ready to add tools.")
+    print("Agent initialized.")
+    input_message = {"role": "user", "content": "Search for C related jobs in SF"}
+    response = agent.invoke({"messages": [input_message]})
+
+    for message in response["messages"]:
+        message.pretty_print()
