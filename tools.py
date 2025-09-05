@@ -22,7 +22,7 @@ def fetch_jobs_func(query: str, locations: Optional[List[str]] = None, top_k: in
     data = [
         {"url": "https://x/jobs/1", "title":"SWE Intern", "job_description":"We need Python + SQL...", "location": "SF"},
         {"url": "https://x/jobs/2", "title":"Platform Eng Intern", "job_description":"Kubernetes, Go, GCP...", "location": "Seattle"},
-        {"url": "https://x/jobs/3", "title":"SWE Intern", "job_description":"We need C + SQL...", "location": "SF"},
+        {"url": "https://x/jobs/3", "title":"SWE Intern", "job_description":"We need C + SQL...", "location": "Seattle"},
         {"url": "https://x/jobs/4", "title":"SWE Intern", "job_description":"We need C++ + Java...", "location": "SF"},
     ]
     return data[:top_k]
