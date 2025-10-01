@@ -1,0 +1,290 @@
+# toy_multiagent.py
+# pip install langchain langgraph langchain-openai pydantic
+
+from typing import TypedDict, List, Literal, Optional, Dict, Any
+from pydantic import BaseModel, Field
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+from langchain.agents import create_openai_tools_agent, AgentExecutor
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
+
+# -----------------------
+# Config (LLMs & switches)
+# -----------------------
+BOSS_MODEL   = "gpt-4o-mini"
+WORKER_MODEL = "gpt-4o-mini"
+HUMAN_APPROVAL_REQUIRED = True  # flip to False to auto-approve
+
+boss_llm   = ChatOpenAI(model=BOSS_MODEL, temperature=0)
+worker_llm = ChatOpenAI(model=WORKER_MODEL, temperature=0)
+
+
+# -----------------------
+# Shared State
+# -----------------------
+class AppState(TypedDict):
+    user_goal: str
+    resume_md: str
+    current_job: Optional[dict]        # {"id", "company", "jd"}
+    queue: List[dict]                  # list of job dicts
+    artifacts: Dict[str, Any]          # jd_summary, resume_edits, cover_letter, logs
+    route: Optional[Literal["JD","RESUME","APPROVAL","APPLY","DONE"]]
+    last_result: Optional[str]
+    approvals: Dict[str, bool]         # job_id -> approved?
+
+# -----------------------
+# Schemas & Tools
+# -----------------------
+class JDSummary(BaseModel):
+    job_id: str
+    company: Optional[str] = None
+    title: Optional[str] = None
+    location: Optional[str] = None
+    salary: Optional[str] = None
+    visa_sponsorship: Optional[str] = None
+    must_have: List[str] = Field(default_factory=list)
+    nice_to_have: List[str] = Field(default_factory=list)
+    tech_stack: List[str] = Field(default_factory=list)
+
+@tool
+def extract_requirements(job_id: str, company: str, job_post: str) -> dict:
+    """JD ANALYST ONLY. Extract key fields from a JD into a structured JSON."""
+    structured = worker_llm.with_structured_output(JDSummary)
+    # The LLM will infer fields; we seed job/company explicitly
+    return structured.invoke(
+        f"Extract structured requirements from this JD (job_id={job_id}, company={company}):\n\n{job_post}"
+    ).model_dump()
+
+@tool
+def propose_resume_edits(resume_md: str, jd_summary: dict) -> dict:
+    """RESUME FITTER ONLY. Propose truthful, precise resume edits aligned to JD."""
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are Resume Fitter. Output JSON list of edits {change_type, section, before, after}. No fabrication."),
+        ("human", "Resume (Markdown):\n{resume}\n\nJD Summary JSON:\n{jd}\n\nPropose edits:")
+    ])
+    msg = prompt.format_messages(resume=resume_md, jd=jd_summary)
+    return {"edits_proposal": worker_llm.invoke(msg).content}
+
+@tool
+def render_resume(resume_md: str, edits_json: str) -> dict:
+    """RESUME FITTER ONLY. Render a 'final' resume (toy: just echo + note)."""
+    return {"rendered_resume": resume_md + "\n\n<!-- Applied edits (toy): -->\n" + edits_json}
+
+@tool
+def generate_cover_letter(jd_summary: dict, resume_md: str) -> dict:
+    """APPLIER ONLY. Draft a short, sincere cover letter tailored to JD."""
+    letter = worker_llm.invoke(
+        "Write a 150-180 word cover letter tailored to this JD summary. "
+        "Be sincere and only use facts in the resume.\n\n"
+        f"JD Summary: {jd_summary}\n\nResume:\n{resume_md}"
+    ).content
+    return {"cover_letter": letter}
+
+# -----------------------
+# Build employees as tool-calling agents
+# -----------------------
+def make_agent(system_prompt: str, tools: list) -> AgentExecutor:
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "{input}")
+    ])
+    agent = create_openai_tools_agent(worker_llm, tools, prompt)
+    return AgentExecutor(agent=agent, tools=tools, verbose=False)
+
+jd_agent = make_agent(
+    "You are the JD Analyst. Analyze JDs and extract structured fields. Refuse anything else.",
+    [extract_requirements]
+)
+resume_agent = make_agent(
+    "You are the Resume Fitter. Propose truthful edits and render resume. Refuse anything else.",
+    [propose_resume_edits, render_resume]
+)
+applier_agent = make_agent(
+    "You are the Applier. Prepare application artifacts (cover letter, submission payload). Do NOT auto-submit unless approved.",
+    [generate_cover_letter]
+)
+
+# -----------------------
+# Nodes (employees & boss)
+# -----------------------
+def jd_node(state: AppState) -> AppState:
+    job = state.get("current_job")
+    if not job:
+        return {**state, "last_result": "No job", "route": "DONE"}
+
+    out = jd_agent.invoke({"input": f"Extract requirements for {job['company']} {job['id']}. JD:\n{job['jd']}"})
+    jd_summary = out.get("output", out)
+    artifacts = {**state.get("artifacts", {}), "jd_summary": jd_summary}
+    return {**state, "artifacts": artifacts, "last_result": f"JD summarized for {job['id']}", "route": "RESUME"}
+
+def resume_node(state: AppState) -> AppState:
+    jd_summary = state["artifacts"].get("jd_summary", {})
+    out = resume_agent.invoke({"input": f"Propose edits.\nRESUME:\n{state['resume_md']}\n\nJD_SUMMARY:\n{jd_summary}"})
+    edits = out.get("output", out)
+    rendered = resume_agent.invoke({"input": f"Render final resume.\nRESUME:\n{state['resume_md']}\nEDITS:\n{edits}"})
+    rendered_doc = rendered.get("output", rendered)
+
+    artifacts = {
+        **state.get("artifacts", {}),
+        "resume_edits": edits,
+        "rendered_resume": rendered_doc
+    }
+    next_route = "APPROVAL" if HUMAN_APPROVAL_REQUIRED else "APPLY"
+    return {**state, "artifacts": artifacts, "last_result": "Resume tailored", "route": next_route}
+
+def approval_node(state: AppState) -> AppState:
+    """Toy human-in-the-loop: auto-approve JD that allow visa, reject otherwise (just to demo branching)."""
+    job = state["current_job"]
+    jd = state["artifacts"].get("jd_summary", {})
+    allow_visa = str(jd.get("visa_sponsorship", "")).lower()
+    approved = ("yes" in allow_visa) or ("case" in allow_visa) or ("opt" in allow_visa)
+    approvals = {**state.get("approvals", {}), job["id"]: approved}
+    msg = "approved" if approved else "rejected"
+    # If rejected, skip to next job
+    if not approved:
+        logs = state.get("artifacts", {}).get("logs", [])
+        logs.append({"job": job["id"], "decision": "rejected_by_policy"})
+        artifacts = {**state.get("artifacts", {}), "logs": logs}
+        q = state.get("queue", [])
+        if q:
+            nxt = q.pop(0)
+            return {**state, "approvals": approvals, "artifacts": artifacts, "queue": q,
+                    "current_job": nxt, "route": "JD", "last_result": f"{job['id']} rejected by policy"}
+        return {**state, "approvals": approvals, "artifacts": artifacts, "route": "DONE",
+                "last_result": f"{job['id']} rejected; queue empty"}
+    return {**state, "approvals": approvals, "last_result": f"{job['id']} approved", "route": "APPLY"}
+
+def apply_node(state: AppState) -> AppState:
+    job = state["current_job"]
+    jd_summary = state["artifacts"].get("jd_summary", {})
+    # Prepare cover letter
+    out = applier_agent.invoke({"input": f"Draft cover letter for job {job['id']}.\nJD_SUMMARY:\n{jd_summary}\nResume:\n{state['resume_md']}"})
+    cover = out.get("output", out)
+
+    # Build a toy submission payload, store it via toy_record_submission
+    payload = {
+        "job_id": job["id"],
+        "company": job["company"],
+        "cover_letter": cover,
+        "resume": state["artifacts"].get("rendered_resume", ""),
+        "jd_summary": jd_summary
+    }
+    stored = toy_record_submission(job["id"], payload)
+
+    logs = state.get("artifacts", {}).get("logs", [])
+    logs.append({"job": job["id"], "action": "prepared_application", "store_result": stored})
+    artifacts = {**state.get("artifacts", {}), "logs": logs, "cover_letter": cover}
+
+    # Advance queue
+    q = state.get("queue", [])
+    if q:
+        nxt = q.pop(0)
+        return {**state, "artifacts": artifacts, "queue": q, "current_job": nxt,
+                "route": "JD", "last_result": f"Application prepared for {job['id']}"}
+    return {**state, "artifacts": artifacts, "route": "DONE", "last_result": f"All applications prepared (last: {job['id']})"}
+
+def boss_node(state: AppState) -> AppState:
+    # Simple deterministic router; upgrade to LLM router later if you like.
+    if not state.get("current_job"):
+        # load from toy API once
+        jobs = toy_fetch_jobs(limit=3)
+        if not jobs:
+            return {**state, "route": "DONE", "last_result": "No jobs found"}
+        first, rest = jobs[0], jobs[1:]
+        return {**state, "current_job": first, "queue": rest, "route": "JD", "last_result": "Seeded queue"}
+    # If artifacts missing, go JD; else resume; else approval/apply; else done
+    a = state.get("artifacts", {})
+    if "jd_summary" not in a:
+        return {**state, "route": "JD"}
+    if "resume_edits" not in a or "rendered_resume" not in a:
+        return {**state, "route": "RESUME"}
+    if HUMAN_APPROVAL_REQUIRED and state["current_job"]["id"] not in state.get("approvals", {}):
+        return {**state, "route": "APPROVAL"}
+    if "cover_letter" not in a:
+        return {**state, "route": "APPLY"}
+    return {**state, "route": "DONE"}
+
+# -----------------------
+# Graph wiring
+# -----------------------
+graph = StateGraph(AppState)
+graph.add_node("BOSS", boss_node)
+graph.add_node("JD", jd_node)
+graph.add_node("RESUME", resume_node)
+graph.add_node("APPROVAL", approval_node)
+graph.add_node("APPLY", apply_node)
+
+graph.add_edge(START, "BOSS")
+graph.add_conditional_edges("BOSS", lambda s: s["route"], {
+    "JD": "JD", "RESUME": "RESUME", "APPROVAL": "APPROVAL", "APPLY": "APPLY", "DONE": END
+})
+for n in ["JD", "RESUME", "APPROVAL", "APPLY"]:
+    graph.add_edge(n, "BOSS")
+
+app = graph.compile(checkpointer=MemorySaver())
+
+# -----------------------
+# Fake data / Toy APIs
+# -----------------------
+FAKE_JOBS = [
+    {
+        "id": "J-001",
+        "company": "Acme AI",
+        "jd": """Title: Software Engineer (Backend)
+Location: Remote (US)
+Visa: Yes, H1B/OPT considered
+Must-have: Python, Postgres, REST, 2+ yrs
+Nice-to-have: LangChain, AWS
+Salary: 140k-170k
+Description: Work on APIs and data pipelines..."""
+    },
+    {
+        "id": "J-002",
+        "company": "Nimbus Cloud",
+        "jd": """Title: Data Engineer
+Location: San Francisco, CA
+Visa: No
+Must-have: SQL, Airflow, Python, 3+ yrs
+Nice-to-have: Spark, Kafka
+Salary: 150k-180k
+Description: Build reliable batch/stream ETL..."""
+    },
+    {
+        "id": "J-003",
+        "company": "Vector Labs",
+        "jd": """Title: ML Engineer
+Location: Seattle, WA (Hybrid)
+Visa: Case-by-case
+Must-have: Python, ML lifecycle, model serving
+Nice-to-have: LangGraph, Triton, Kubernetes
+Salary: 160k-190k
+Description: Productionize models..."""
+    }
+]
+
+def toy_fetch_jobs(limit=3):
+    return FAKE_JOBS[:limit]
+
+def toy_record_submission(job_id: str, payload: dict):
+    # pretend to store in a DB; here we just print/log
+    return {"ok": True, "job_id": job_id, "stored_payload_keys": list(payload.keys())}
+
+# -----------------------
+# Demo run
+# -----------------------
+if __name__ == "__main__":
+    initial: AppState = {
+        "user_goal": "Apply to 3 tech companies (backend-leaning). Respect visa policy.",
+        "resume_md": "# Alex Tan — Resume\n\n- Python, SQL, Airflow, LangChain, AWS\n- Projects: WeatherApp (FastAPI, Postgres) ...\n- Education: MSCS @ USF\n",
+        "current_job": None,
+        "queue": [],
+        "artifacts": {},
+        "approvals": {}
+    }
+    final = app.invoke(initial)
+    print("\n=== RESULT ===")
+    print(final["last_result"])
+    print("Processed approvals:", final.get("approvals", {}))
+    print("Artifacts keys:", list(final.get("artifacts", {}).keys()))

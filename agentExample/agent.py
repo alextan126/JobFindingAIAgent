@@ -36,8 +36,12 @@ def build_agent() -> Tuple[object, ChatOpenAI]:
 if __name__ == "__main__":
     agent, _ = build_agent()
     print("Agent initialized.")
-    input_message = {"role": "user", "content": "Search for C related jobs in SF"}
-    response = agent.invoke({"messages": [input_message]})
 
-    for message in response["messages"]:
-        message.pretty_print()
+    input_message = {"role": "user", "content": "Search for C related jobs in SF"}
+
+    for step in agent.stream({"messages": [input_message]}, stream_mode="values"):
+        step["messages"][-1].pretty_print()
+    # response = agent.invoke({"messages": [input_message]})
+
+    # for message in response["messages"]:
+    #     message.pretty_print()
