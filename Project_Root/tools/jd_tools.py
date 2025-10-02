@@ -1,11 +1,48 @@
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
+from typing import Annotated
 from common.models import JDSummary
 from app.config import worker_llm
 
 @tool
-def extract_requirements(job_id: str, company: str, job_post: str) -> dict:
-    """JD ANALYST ONLY. Extract key fields from a JD into a structured JSON."""
+def analyze_current_job(state: Annotated[dict, InjectedState]) -> str:
+    """
+    JD ANALYST ONLY. Analyze the job description from state.current_job.
+    Returns a formatted summary of the job requirements.
+    """
+    current_job = state.get('current_job', {})
+    
+    if not current_job:
+        return "ERROR: No job found in state"
+    
+    job_id = current_job.get('id', 'unknown')
+    company = current_job.get('company', 'unknown')
+    job_post = current_job.get('jd', '')
+    
+    if not job_post:
+        return "ERROR: Job description is empty"
+    
+    # Extract structured data
     structured = worker_llm().with_structured_output(JDSummary)
-    return structured.invoke(
+    jd_summary = structured.invoke(
         f"Extract structured requirements from this JD (job_id={job_id}, company={company}):\n\n{job_post}"
     ).model_dump()
+    
+    # Write to state
+    if 'artifacts' not in state:
+        state['artifacts'] = {}
+    state['artifacts']['jd_summary'] = jd_summary
+    
+    # Return formatted summary for agent
+    return f"""Job Analysis Complete for {company}!
+
+Job ID: {job_id}
+Title: {jd_summary.get('title', 'N/A')}
+Location: {jd_summary.get('location', 'N/A')}
+Salary: {jd_summary.get('salary', 'N/A')}
+Visa: {jd_summary.get('visa_sponsorship', 'N/A')}
+
+Must-Have Skills: {', '.join(jd_summary.get('must_have', []))}
+Nice-to-Have: {', '.join(jd_summary.get('nice_to_have', []))}
+
+Analysis saved to state.artifacts['jd_summary']"""

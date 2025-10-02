@@ -1,103 +1,249 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.messages import HumanMessage, AIMessage
+from pydantic import BaseModel, Field
+from typing import Optional, List
+
 from app.state import AppState
-from agents import jd_analyst, resume_fitter, applier, supervisor
-from adapters.toy_jobs import toy_fetch_jobs
-from adapters.toy_store import toy_record_submission
+from app.config import boss_llm
 
-# --- Node functions (employees & boss orchestration) ---
+# Import custom agents
+from agents.jd_analyst import jd_analyst_agent
+from agents.resume_fitter import resume_fitter_agent
+from agents.applier import applier_agent
 
-def boss_node(state: AppState) -> AppState:
-    decision = supervisor.route(state)
-    if decision == "SEED":
+# -----------------------
+# Supervisor Decision Model
+# -----------------------
+class SupervisorDecision(BaseModel):
+    """Supervisor's routing decision"""
+    route: str = Field(description="Next route: JD, RESUME, APPLY, HITL, or DONE")
+    reasoning: str = Field(description="Brief explanation of the decision")
+    user_feedback: Optional[str] = Field(default="", description="Specific feedback to pass to agents")
+    approve_job: Optional[bool] = Field(default=None, description="True to approve, False to reject, None if not deciding")
+    clear_artifacts: List[str] = Field(default_factory=list, description="Artifacts to regenerate")
+
+# -----------------------
+# Node Functions
+# -----------------------
+
+def jd_analyst_node(state: AppState) -> AppState:
+    job = state.get("current_job")
+    if not job:
+        return {**state, "route": "DONE"}
+    
+    print(f"\n{'='*60}")
+    print(f"📊 JD ANALYST - {job['company']}")
+    print(f"{'='*60}")
+    
+    result = jd_analyst_agent(state)
+    print(f"\n⬅️  Returning to SUPERVISOR")
+    
+    return {**result, "route": None}
+
+def resume_fitter_node(state: AppState) -> AppState:
+    print(f"\n{'='*60}")
+    print(f"📝 RESUME FITTER")
+    print(f"{'='*60}")
+    
+    user_feedback = state.get("user_feedback", "")
+    if user_feedback:
+        print(f"💬 Incorporating feedback: {user_feedback}")
+    
+    result = resume_fitter_agent(state)
+    print(f"\n⬅️  Returning to SUPERVISOR")
+    
+    result["user_feedback"] = ""
+    return {**result, "route": None}
+
+def applier_node(state: AppState) -> AppState:
+    print(f"\n{'='*60}")
+    print(f"📧 APPLIER")
+    print(f"{'='*60}")
+    
+    user_feedback = state.get("user_feedback", "")
+    if user_feedback:
+        print(f"💬 Incorporating feedback: {user_feedback}")
+    
+    result = applier_agent(state)
+    print(f"\n⬅️  Returning to SUPERVISOR")
+    
+    result["user_feedback"] = ""
+    return {**result, "route": None}
+
+def supervisor_node(state: AppState) -> AppState:
+    """Intelligent supervisor"""
+    print(f"\n🔄 SUPERVISOR - Evaluating Situation")
+    
+    # Initial setup
+    if not state.get("current_job") and not state.get("queue"):
+        from adapters.toy_jobs import toy_fetch_jobs
         jobs = toy_fetch_jobs(limit=3)
         if not jobs:
-            return {**state, "route": "DONE", "last_result": "No jobs found"}
+            return {**state, "route": "DONE"}
         first, rest = jobs[0], jobs[1:]
-        return {**state, "current_job": first, "queue": rest, "route": "JD", "last_result": "Seeded queue"}
-    return {**state, "route": decision}
+        
+        print(f"📥 Loaded {len(jobs)} jobs. Starting with {first['company']}")
+        print(f"➡️  Routing to: JD_ANALYST")
+        
+        return {
+            **state,
+            "current_job": first,
+            "queue": rest,
+            "route": "JD"
+        }
+    
+    # Get context
+    artifacts = state.get("artifacts", {})
+    job = state.get("current_job", {})
+    job_id = job.get("id")
+    approvals = state.get("approvals", {})
+    messages = state.get("messages", [])
+    queue = state.get("queue", [])
+    
+    # Check if job was just rejected
+    if job_id in approvals and not approvals[job_id]:
+        if queue:
+            next_job = queue.pop(0)
+            print(f"❌ Job {job_id} rejected. Moving to: {next_job['company']}")
+            return {
+                **state,
+                "artifacts": {},
+                "queue": queue,
+                "current_job": next_job,
+                "messages": [],
+                "route": "JD"
+            }
+        else:
+            print(f"❌ Job {job_id} rejected. No more jobs.")
+            return {**state, "route": "DONE"}
+    
+    # Check if job complete
+    if job_id in approvals and approvals[job_id] and "cover_letter" in artifacts:
+        if queue:
+            next_job = queue.pop(0)
+            print(f"✅ Job {job_id} complete! Moving to: {next_job['company']}")
+            return {
+                **state,
+                "artifacts": {},
+                "queue": queue,
+                "current_job": next_job,
+                "messages": [],
+                "route": "JD"
+            }
+        else:
+            print(f"🎉 All {len(approvals)} jobs processed!")
+            return {**state, "route": "DONE"}
+    
+    # Check for user input
+    has_user_input = messages and isinstance(messages[-1], HumanMessage)
+    user_message = messages[-1].content if has_user_input else None
+    
+    # Let LLM decide with EXPLICIT approval instructions
+    decision_prompt = f"""You are a supervisor managing job applications.
 
-_jd_agent = jd_analyst.make_agent()
-_resume_agent = resume_fitter.make_agent()
-_apply_agent = applier.make_agent()
+STATUS:
+- Job: {job.get('company')} ({job_id})
+- Completed: {list(artifacts.keys())}
+- Approved: {approvals.get(job_id, 'NO - not yet approved')}
+- Queue: {len(queue)} more jobs
 
-def jd_node(state: AppState) -> AppState:
-    job = state.get("current_job")
-    out = _jd_agent.invoke({"input": f"Extract requirements for {job['company']} {job['id']}. JD:\n{job['jd']}"})
-    jd_summary = out.get("output", out)
-    artifacts = {**state.get("artifacts", {}), "jd_summary": jd_summary}
-    return {**state, "artifacts": artifacts, "last_result": f"JD summarized for {job['id']}", "route": "RESUME"}
+USER SAID: "{user_message if user_message else 'nothing'}"
 
-def resume_node(state: AppState) -> AppState:
-    jd_summary = state["artifacts"].get("jd_summary", {})
-    edits = _resume_agent.invoke({"input": f"Propose edits.\nRESUME:\n{state['resume_md']}\n\nJD_SUMMARY:\n{jd_summary}"})
-    edits_val = edits.get("output", edits)
-    rendered = _resume_agent.invoke({"input": f"Render final resume.\nRESUME:\n{state['resume_md']}\nEDITS:\n{edits_val}"})
-    rendered_val = rendered.get("output", rendered)
-    artifacts = {**state.get("artifacts", {}), "resume_edits": edits_val, "rendered_resume": rendered_val}
-    next_route = "APPROVAL" if __import__('app.config').config.HUMAN_APPROVAL_REQUIRED else "APPLY"
-    return {**state, "artifacts": artifacts, "last_result": "Resume tailored", "route": next_route}
+RULES:
+1. Auto-progress: JD → RESUME → APPLY (no HITL)
+2. When all 3 done (jd_summary, rendered_resume, cover_letter) AND not yet approved → route to HITL
+3. **APPROVAL SIGNALS**: If user says "looks good", "approve", "proceed", "continue", "yes", "apply", "submit" → SET approve_job=true
+4. **REJECTION SIGNALS**: If user says "skip", "reject", "no", "next job" → SET approve_job=false
+5. **REFINEMENT**: If user mentions problems or wants changes → extract feedback, clear artifacts, route to fix
+6. If user asks to "show" something → route to HITL (it will display)
 
-def approval_node(state: AppState) -> AppState:
-    job = state["current_job"]
-    jd = state["artifacts"].get("jd_summary", {})
-    allow_visa = str(jd.get("visa_sponsorship", "")).lower()
-    approved = ("yes" in allow_visa) or ("case" in allow_visa) or ("opt" in allow_visa)
-    approvals = {**state.get("approvals", {}), job["id"]: approved}
-    if not approved:
-        logs = state.get("artifacts", {}).get("logs", [])
-        logs.append({"job": job["id"], "decision": "rejected_by_policy"})
-        artifacts = {**state.get("artifacts", {}), "logs": logs}
-        q = state.get("queue", [])
-        if q:
-            nxt = q.pop(0)
-            return {**state, "approvals": approvals, "artifacts": artifacts, "queue": q,
-                    "current_job": nxt, "route": "JD", "last_result": f"{job['id']} rejected by policy"}
-        return {**state, "approvals": approvals, "artifacts": artifacts, "route": "DONE",
-                "last_result": f"{job['id']} rejected; queue empty"}
-    return {**state, "approvals": approvals, "last_result": f"{job['id']} approved", "route": "APPLY"}
+CRITICAL: When you detect approval (step 3), you MUST set approve_job=true in your response!
 
-def apply_node(state: AppState) -> AppState:
-    job = state["current_job"]
-    jd_summary = state["artifacts"].get("jd_summary", {})
-    out = _apply_agent.invoke({"input": f"Draft cover letter for job {job['id']}.\nJD_SUMMARY:\n{jd_summary}\nResume:\n{state['resume_md']}"})
-    cover_val = out.get("output", out)
+Decide now:
+"""
 
-    payload = {
-        "job_id": job["id"],
-        "company": job["company"],
-        "cover_letter": cover_val,
-        "resume": state["artifacts"].get("rendered_resume", ""),
-        "jd_summary": jd_summary
+    response = boss_llm().with_structured_output(SupervisorDecision).invoke(decision_prompt)
+    
+    print(f"🤖 Decision: {response.reasoning}")
+    print(f"➡️  Routing to: {response.route}")
+    
+    # Update state
+    new_state = {**state, "route": response.route, "messages": []}
+    
+    if response.user_feedback:
+        new_state["user_feedback"] = response.user_feedback
+        print(f"💬 Feedback to agent: {response.user_feedback[:100]}...")
+    
+    if response.clear_artifacts:
+        artifacts_copy = {**artifacts}
+        for key in response.clear_artifacts:
+            artifacts_copy.pop(key, None)
+        new_state["artifacts"] = artifacts_copy
+        print(f"🗑️  Clearing: {response.clear_artifacts}")
+    
+    if response.approve_job is not None:
+        new_state["approvals"] = {**approvals, job_id: response.approve_job}
+        print(f"{'✅' if response.approve_job else '❌'} Job {job_id}: {'APPROVED' if response.approve_job else 'REJECTED'}")
+    
+    return new_state
+
+def hitl_node(state: AppState) -> AppState:
+    """Human-in-the-loop for displaying info and getting input"""
+    job = state.get("current_job", {})
+    artifacts = state.get("artifacts", {})
+    messages = state.get("messages", [])
+    
+    print(f"\n{'='*60}")
+    print(f"👤 HUMAN CONSULTATION - {job.get('company')}")
+    print(f"{'='*60}")
+    
+    # Display info if requested  
+    if messages and isinstance(messages[-1], HumanMessage):
+        user_input = messages[-1].content.lower()
+        
+        if 'resume' in user_input and any(w in user_input for w in ['show', 'see', 'display']):
+            print(f"\n📄 CURRENT RESUME:")
+            print("="*60)
+            print(artifacts.get('rendered_resume', 'No resume yet'))
+            print("="*60)
+            return {**state, "messages": [], "route": "HITL"}
+        
+        elif 'cover' in user_input and any(w in user_input for w in ['show', 'see', 'display']):
+            print(f"\n📨 COVER LETTER:")
+            print("="*60)
+            print(artifacts.get('cover_letter', 'No cover letter yet'))
+            print("="*60)
+            return {**state, "messages": [], "route": "HITL"}
+    
+    print(f"⏸️  Waiting for your input...")
+    return {**state, "route": "HITL"}
+
+# -----------------------
+# Build Graph
+# -----------------------
+graph = StateGraph(AppState)
+
+graph.add_node("supervisor", supervisor_node)
+graph.add_node("jd_analyst", jd_analyst_node)
+graph.add_node("resume_fitter", resume_fitter_node)
+graph.add_node("applier", applier_node)
+graph.add_node("hitl", hitl_node)
+
+graph.add_edge(START, "supervisor")
+graph.add_conditional_edges(
+    "supervisor",
+    lambda s: s.get("route"),
+    {
+        "JD": "jd_analyst",
+        "RESUME": "resume_fitter",
+        "APPLY": "applier",
+        "HITL": "hitl",
+        "DONE": END
     }
-    stored = toy_record_submission(job["id"], payload)
+)
 
-    logs = state.get("artifacts", {}).get("logs", [])
-    logs.append({"job": job["id"], "action": "prepared_application", "store_result": stored})
-    artifacts = {**state.get("artifacts", {}), "logs": logs, "cover_letter": cover_val}
+for node in ["jd_analyst", "resume_fitter", "applier", "hitl"]:
+    graph.add_edge(node, "supervisor")
 
-    q = state.get("queue", [])
-    if q:
-        nxt = q.pop(0)
-        return {**state, "artifacts": artifacts, "queue": q, "current_job": nxt,
-                "route": "JD", "last_result": f"Application prepared for {job['id']}"}
-    return {**state, "artifacts": artifacts, "route": "DONE", "last_result": f"All applications prepared (last: {job['id']})"}
-
-# --- Graph builder ---
-
-def build_graph():
-    graph = StateGraph(AppState)
-    graph.add_node("BOSS", boss_node)
-    graph.add_node("JD", jd_node)
-    graph.add_node("RESUME", resume_node)
-    graph.add_node("APPROVAL", approval_node)
-    graph.add_node("APPLY", apply_node)
-
-    graph.add_edge(START, "BOSS")
-    graph.add_conditional_edges("BOSS", lambda s: s["route"], {
-        "JD": "JD", "RESUME": "RESUME", "APPROVAL": "APPROVAL", "APPLY": "APPLY", "DONE": END
-    })
-    for n in ["JD", "RESUME", "APPROVAL", "APPLY"]:
-        graph.add_edge(n, "BOSS")
-
-    return graph.compile(checkpointer=MemorySaver())
+app = graph.compile(checkpointer=MemorySaver())

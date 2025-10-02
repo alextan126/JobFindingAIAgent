@@ -1,21 +1,27 @@
+from app.graph import app
 from app.state import AppState
-from app.graph import build_graph
 
 def run_demo():
-    app = build_graph()
+    print("\n" + "🚀 STARTING JOB APPLICATION WORKFLOW ".center(60, "=") + "\n")
+    
     initial: AppState = {
-        "user_goal": "Apply to 3 tech companies (backend-leaning). Respect visa policy.",
-        "resume_md": "# Alex Tan — Resume\n\n- Python, SQL, Airflow, LangChain, AWS\n- Projects: WeatherApp (FastAPI, Postgres) ...\n- Education: MSCS @ USF\n",
+        "user_goal": "Apply to backend jobs. Respect visa policy.",
+        "resume_md": "# Alex Tan — Resume\n\n- Python, SQL, Airflow, LangChain, AWS\n- Projects: WeatherApp (FastAPI, Postgres)\n- Education: MSCS @ USF\n",
         "current_job": None,
         "queue": [],
         "artifacts": {},
-        "approvals": {}
+        "approvals": {},
+        "route": None
     }
-    final = app.invoke(initial)
-    print("\n=== RESULT ===")
-    print(final["last_result"]) 
-    print("Approvals:", final.get("approvals", {}))
-    print("Artifacts keys:", list(final.get("artifacts", {}).keys()))
+    
+    config = {"configurable": {"thread_id": "demo-1"}}
+    
+    final = app.invoke(initial, config=config)
+    
+    print("\n" + "✨ WORKFLOW COMPLETE ".center(60, "="))
+    print(f"\nResult: {final.get('last_result')}")
+    print(f"Approvals: {final.get('approvals', {})}")
+    print(f"Artifacts: {list(final.get('artifacts', {}).keys())}\n")
 
 if __name__ == "__main__":
     run_demo()
