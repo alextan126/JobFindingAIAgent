@@ -1,19 +1,3 @@
-# Virtual environments
-.venv/
-venv/
-env/
-ENV/
-Project_Root/venv/
-
-# API Keys and environment files
-.env
-.env.local
-.env.*.local
-*.key
-*.pem
-secrets.json
-config.local.*
-
 # Python
 __pycache__/
 *.py[cod]
@@ -39,15 +23,51 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.iml
+*.iws
+*.ipr
+*.log
+hs_err_pid*
+replay_pid*
 
-# Testing
+# Output and generated files
+out/
+docs/*.txt
+
+# Maven status and archiver
+.mvn/
+
+# IDEs
+.idea/
+.vscode/
+
+# Playwright
+.pw-profile/
+playwright-report/
+test-results/
+trace.zip
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# API Keys and environment files
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets.json
+config.local.*
+
+# Testing / Coverage
 .pytest_cache/
 .coverage
 htmlcov/
@@ -56,11 +76,17 @@ htmlcov/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Logs
+# Logs / Misc
 *.log
 logs/
+.DS_Store
+*~
+*.swp
+*.swo
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+Project_Root/venv/
