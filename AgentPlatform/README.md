@@ -9,7 +9,7 @@ A conversational multi-agent system that automates job application processes usi
 - **Applier**: Generates personalized cover letters
 - **Intelligent Supervisor**: Manages workflow and makes routing decisions
 - **Human-in-the-Loop**: Interactive approval and feedback system
-- **Interactive-Tool*: Coomand line tool to interactively act with agent for test/dev/demo
+- **Interactive-Tool**: Coomand line tool to interactively act with agent for test/dev/demo
 
 ## Prerequisites
 
