@@ -153,12 +153,14 @@ USER SAID: "{user_message if user_message else 'nothing'}"
 RULES:
 1. Auto-progress: JD → RESUME → APPLY (no HITL)
 2. When all 3 done (jd_summary, rendered_resume, cover_letter) AND not yet approved → route to HITL
-3. **APPROVAL SIGNALS**: If user says "looks good", "approve", "proceed", "continue", "yes", "apply", "submit" → SET approve_job=true
-4. **REJECTION SIGNALS**: If user says "skip", "reject", "no", "next job" → SET approve_job=false
-5. **REFINEMENT**: If user mentions problems or wants changes → extract feedback, clear artifacts, route to fix
+3. **APPROVAL SIGNALS**: If user says "looks good", "approve", "proceed", "continue", "yes", "apply", "submit" → SET approve_job=true AND route to APPLY
+4. **REJECTION SIGNALS**: If user says "skip", "reject", "no", "next job" → SET approve_job=false AND route to JD (next job)
+5. **REFINEMENT**: If user mentions problems or wants changes → extract feedback, clear relevant artifacts, route to fix
 6. If user asks to "show" something → route to HITL (it will display)
 
-CRITICAL: When you detect approval (step 3), you MUST set approve_job=true in your response!
+CRITICAL: 
+- When you detect approval (step 3), you MUST set approve_job=true AND route to APPLY to generate cover letter!
+- When you detect rejection (step 4), you MUST set approve_job=false AND route to JD to move to next job!
 
 Decide now:
 """
