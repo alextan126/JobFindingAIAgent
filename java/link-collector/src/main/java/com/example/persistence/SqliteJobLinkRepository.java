@@ -22,9 +22,14 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
             )) {
                 for (JobLink l : links) {
                     ps.setString(1, l.url());
-                    ps.setString(2, l.url());
-                    ps.setString(3, l.url());
-                    ps.setString(4, l.url());
+                    ps.setString(2, l.hostType());
+                    ps.setString(3, l.source());
+                    ps.setObject(4, l.discoveredAt());
+                    System.out.printf(
+                            "DBG insert: url=%s hostType=%s source=%s discoveredAt=%s%n",
+                            l.url(), l.hostType(), l.source(), l.discoveredAt()
+                    );
+
                     ps.addBatch();
                 }
                 ps.executeBatch();

@@ -42,6 +42,15 @@ public final class Main {
     }
 
     private static void collectFromGithub(String readmeUrl) throws Exception {
+        System.out.println("JDBC=" + DEFAULT_JDBC);
+        try (var c = java.sql.DriverManager.getConnection(DEFAULT_JDBC);
+             var st = c.createStatement();
+             var rs = st.executeQuery("PRAGMA database_list;")) {
+            while (rs.next()) {
+                System.out.printf("DB ATTACHED: name=%s file=%s%n", rs.getString("name"), rs.getString("file"));
+            }
+        }
+
         // make sure table exists
         Migrations.migrate(DEFAULT_JDBC);
 
