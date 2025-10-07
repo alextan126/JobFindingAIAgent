@@ -76,28 +76,34 @@ When the supervisor asks for input, you can use natural language:
 - **Display**: "show me the resume", "show the cover letter"
 - **Exit**: "quit", "exit", "stop"
 
+<pre>
+
 ## Project Structure
+
+```
 AgentPlatform/
 ├── app/
-│   ├── config.py          # LLM configuration
-│   ├── graph.py           # LangGraph workflow definition
+│   ├── config.py           # LLM configuration
+│   ├── graph.py            # LangGraph workflow definition
 │   ├── interactive_demo.py # Interactive demo script
-│   ├── main.py            # Simple demo script
-│   └── state.py           # State schema definition
+│   ├── main.py             # Simple demo script
+│   └── state.py            # State schema definition
 ├── agents/
-│   ├── jd_analyst.py      # Job description analysis agent
-│   ├── resume_fitter.py   # Resume tailoring agent
-│   └── applier.py         # Application generation agent
+│   ├── jd_analyst.py       # Job description analysis agent
+│   ├── resume_fitter.py    # Resume tailoring agent
+│   └── applier.py          # Application generation agent
 ├── adapters/
-│   ├── toy_jobs.py        # Sample job data
-│   └── toy_store.py       # Sample storage adapter
+│   ├── toy_jobs.py         # Sample job data
+│   └── toy_store.py        # Sample storage adapter
 ├── common/
-│   └── models.py          # Pydantic models
-├── tools/                 # Agent tools
-├── requirements.txt       # Python dependencies
-└── README.md             # This file
+│   └── models.py           # Pydantic models
+├── tools/                  # Agent tools
+├── requirements.txt        # Python dependencies
+└── README.md               # Project documentation
+```
+</pre>
 
-##Configuration
+## Configuration
 Edit app/config.py to customize:
 Models: Change BOSS_MODEL and WORKER_MODEL
 Temperature: Adjust model creativity (0 = deterministic)
