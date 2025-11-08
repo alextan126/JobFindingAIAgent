@@ -4,19 +4,31 @@ import com.example.classify.HostClassifier;
 import com.example.model.JobLink;
 import com.example.model.JobLead;
 import com.example.persistence.JobLinkRepository;
+import com.example.persistence.JobInfoRepository;
 import com.example.persistence.Migrations;
 import com.example.persistence.SqliteJobLinkRepository;
+import com.example.persistence.SqliteJobInfoRepository;
 import com.example.scrape.GitHubLinkCollector;
+import com.example.scrape.JobInfoScraper;
+import com.example.scrape.OpenAIJobParser;
+import io.github.cdimascio.dotenv.Dotenv;
 
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 
 public final class Main {
+    // Load .env file if it exists, otherwise use system environment variables
+    private static final Dotenv dotenv = Dotenv.configure()
+            .ignoreIfMissing()  // Don't fail if .env doesn't exist
+            .load();
+
     private static final String DEFAULT_JDBC =
-            System.getenv().getOrDefault("JOBS_DB_URL", "jdbc:sqlite:jobs.db");
+            dotenv.get("JOBS_DB_URL", "jdbc:sqlite:jobs.db");
     private static final boolean DEFAULT_HEADLESS =
-            Boolean.parseBoolean(System.getenv().getOrDefault("HEADLESS", "true"));
+            Boolean.parseBoolean(dotenv.get("HEADLESS", "true"));
+    private static final String OPENAI_API_KEY =
+            dotenv.get("OPENAI_API_KEY");
 
     public static void main(String[] args) throws Exception {
         if (args.length == 0) { printHelp(); return; }
@@ -32,6 +44,21 @@ public final class Main {
                     System.exit(2);
                 }
                 collectFromGithub(args[1]);
+            }
+            case "scrape-jobs" -> {
+                int limit = 10; // default
+                if (args.length >= 2) {
+                    try {
+                        limit = Integer.parseInt(args[1]);
+                    } catch (NumberFormatException e) {
+                        System.err.println("Invalid limit: " + args[1]);
+                        System.exit(2);
+                    }
+                }
+                scrapeJobs(limit);
+            }
+            case "scrape-all" -> {
+                scrapeJobs(Integer.MAX_VALUE); // scrape all available jobs
             }
             default -> {
                 System.err.println("Unknown command: " + args[0]);
@@ -101,14 +128,51 @@ public final class Main {
         }
     }
 
+    private static void scrapeJobs(int limit) throws Exception {
+        // Validate OpenAI API key
+        if (OPENAI_API_KEY == null || OPENAI_API_KEY.isBlank()) {
+            System.err.println("Error: OPENAI_API_KEY environment variable not set.");
+            System.err.println("Please set your OpenAI API key:");
+            System.err.println("  export OPENAI_API_KEY='sk-...'");
+            System.exit(1);
+        }
+
+        System.out.println("JDBC=" + DEFAULT_JDBC);
+        System.out.println("Scraping up to " + limit + " job postings using OpenAI...");
+
+        // Ensure migrations are run
+        Migrations.migrate(DEFAULT_JDBC);
+
+        // Create repositories
+        JobLinkRepository linkRepo = new SqliteJobLinkRepository(DEFAULT_JDBC);
+        JobInfoRepository jobInfoRepo = new SqliteJobInfoRepository(DEFAULT_JDBC);
+
+        // Create OpenAI parser
+        OpenAIJobParser openAIParser = new OpenAIJobParser(OPENAI_API_KEY);
+
+        try {
+            // Create and run scraper
+            JobInfoScraper scraper = new JobInfoScraper(linkRepo, jobInfoRepo, openAIParser, DEFAULT_HEADLESS);
+            int scraped = scraper.scrapeJobs(limit);
+
+            System.out.println("\nDone! Successfully scraped " + scraped + " jobs.");
+        } finally {
+            // Clean up OpenAI service
+            openAIParser.close();
+        }
+    }
+
     private static void printHelp() {
         System.out.println("""
         link-collector commands:
           migrate
           collect-github <README_URL>
+          scrape-jobs [LIMIT]     (default limit: 10)
+          scrape-all              (scrape all unscraped job links)
         Env:
-          JOBS_DB_URL   (default: jdbc:sqlite:jobs.db)
-          HEADLESS      true|false (default: true)
+          JOBS_DB_URL      (default: jdbc:sqlite:jobs.db)
+          HEADLESS         true|false (default: true)
+          OPENAI_API_KEY   (required for scrape-jobs)
         """);
     }
 }
