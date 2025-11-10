@@ -30,4 +30,11 @@ public interface JobInfoRepository {
      * @throws Exception if database operation fails
      */
     boolean existsByJobLinkId(Integer jobLinkId) throws Exception;
+
+    /**
+     * Find all job info records in the database.
+     * @return list of all JobInfo records
+     * @throws Exception if database operation fails
+     */
+    List<JobInfo> findAll() throws Exception;
 }

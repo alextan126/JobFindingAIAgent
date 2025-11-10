@@ -26,6 +26,26 @@ public record Application(
         public static final String ACCEPTED = "accepted";
     }
 
+    // Convenience constants at record level
+    public static final String STATUS_PENDING = Status.PENDING;
+    public static final String STATUS_APPLIED = Status.APPLIED;
+    public static final String STATUS_INTERVIEWING = Status.INTERVIEWING;
+    public static final String STATUS_REJECTED = Status.REJECTED;
+    public static final String STATUS_ACCEPTED = Status.ACCEPTED;
+
+    /**
+     * Validate if a status string is valid.
+     */
+    public static boolean isValidStatus(String status) {
+        return status != null && (
+            status.equals(STATUS_PENDING) ||
+            status.equals(STATUS_APPLIED) ||
+            status.equals(STATUS_INTERVIEWING) ||
+            status.equals(STATUS_REJECTED) ||
+            status.equals(STATUS_ACCEPTED)
+        );
+    }
+
     /**
      * Builder for creating Application instances
      */

@@ -95,6 +95,23 @@ public final class SqliteJobInfoRepository implements JobInfoRepository {
         }
     }
 
+    @Override
+    public List<JobInfo> findAll() throws Exception {
+        String sql = "SELECT * FROM job_info ORDER BY scraped_at DESC";
+
+        try (Connection conn = DriverManager.getConnection(jdbcUrl);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            List<JobInfo> results = new ArrayList<>();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    results.add(mapResultSetToJobInfo(rs));
+                }
+            }
+            return results;
+        }
+    }
+
     private JobInfo mapResultSetToJobInfo(ResultSet rs) throws SQLException {
         return new JobInfo(
             rs.getInt("id"),
