@@ -19,6 +19,39 @@ A conversational multi-agent system that automates job application processes usi
 
 ## Installation
 
+### Option 1: Docker (Recommended)
+
+The easiest way to run the Agent Platform is using Docker, which handles all dependencies automatically.
+
+1. **Prerequisites:**
+   - Docker and Docker Compose installed
+   - OpenAI API key
+
+2. **Set up your environment:**
+
+   Create a `.env` file in the project root directory (one level up from `AgentPlatform/`):
+   ```bash
+   cd ..  # Go to project root
+   echo "OPENAI_API_KEY=your-api-key-here" > .env
+   ```
+
+3. **Build and start the services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Run the interactive demo:**
+   ```bash
+   docker-compose exec agent-platform python -m app.interactive_demo
+   ```
+
+5. **Development workflow:**
+   - Edit code in `AgentPlatform/` directory - changes are reflected immediately (no rebuild needed)
+   - Logs: `docker-compose logs agent-platform`
+   - Stop services: `docker-compose down`
+
+### Option 2: Local Installation
+
 1. **Clone the repository:**
    ```bash
    git clone <repository-url>
@@ -40,7 +73,7 @@ A conversational multi-agent system that automates job application processes usi
    ```bash
    export OPENAI_API_KEY="your-api-key-here"
    ```
-   
+
    Or add it to your shell profile (`.bashrc`, `.zshrc`, etc.):
    ```bash
    echo 'export OPENAI_API_KEY="your-api-key-here"' >> ~/.zshrc

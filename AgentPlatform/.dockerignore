@@ -1,0 +1,38 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files (will be passed via docker-compose)
+.env
+.env.local
+
+# Git
+.git/
+.gitignore
+
+# Data directories (will be mounted as volumes)
+data/
+
+# Documentation
+README.md

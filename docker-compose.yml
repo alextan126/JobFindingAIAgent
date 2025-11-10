@@ -1,0 +1,68 @@
+services:
+  # Java Link Collector Service
+  link-collector:
+    build:
+      context: ./java/link-collector
+      dockerfile: Dockerfile
+    container_name: job-link-collector
+    volumes:
+      # Persist SQLite database
+      - ./data/jobs.db:/app/data/jobs.db
+      # Mount source code for development (optional)
+      # - ./java/link-collector/src:/build/src
+    environment:
+      - DATABASE_PATH=/app/data/jobs.db
+      - HEADLESS=true
+    networks:
+      - job-agent-network
+    # Keep container running for interactive commands
+    stdin_open: true
+    tty: true
+    command: tail -f /dev/null
+
+  # Python Agent Platform Service
+  agent-platform:
+    build:
+      context: ./AgentPlatform
+      dockerfile: Dockerfile
+    container_name: job-agent-platform
+    volumes:
+      # Mount source code for development
+      - ./AgentPlatform:/app
+      # Persist any generated resumes/cover letters
+      - ./data/resumes:/app/data/resumes
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONUNBUFFERED=1
+    networks:
+      - job-agent-network
+    depends_on:
+      - link-collector
+    # Keep container running for interactive commands
+    stdin_open: true
+    tty: true
+    command: tail -f /dev/null
+
+  # Optional: PostgreSQL for production
+  # Uncomment when ready to move from SQLite to PostgreSQL
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: job-postgres
+  #   environment:
+  #     - POSTGRES_USER=jobagent
+  #     - POSTGRES_PASSWORD=jobagent123
+  #     - POSTGRES_DB=jobs
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - job-agent-network
+
+networks:
+  job-agent-network:
+    driver: bridge
+
+volumes:
+  # postgres-data:  # Uncomment when using PostgreSQL
+  jobs-data:
