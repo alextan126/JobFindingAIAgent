@@ -1,15 +1,16 @@
 # Job Application Agent Platform
 
-A conversational multi-agent system that automates job application processes using LangGraph. The system includes intelligent agents for job description analysis, resume tailoring, and application generation, with human-in-the-loop supervision.
+An automated multi-agent workflow built with LangGraph that pulls jobs from a backend, tailors application materials, and streams progress back to the frontend.
 
 ## Features
 
-- **JD Analyst**: Analyzes job descriptions and extracts structured requirements
-- **Resume Fitter**: Tailors resumes to match specific job requirements
-- **Applier**: Generates personalized cover letters
-- **Intelligent Supervisor**: Manages workflow and makes routing decisions
-- **Human-in-the-Loop**: Interactive approval and feedback system
-- **Interactive-Tool*: Coomand line tool to interactively act with agent for test/dev/demo
+- **JD Analyst**: Summarises each job and extracts structured requirements for later stages.
+- **Resume Fitter**: Tailors the user’s resume (Markdown + PDF) based on the job summary.
+- **Applier**: Generates a cover letter, renders it to PDF, and posts both PDFs plus the apply URL back to the backend.
+- **Autonomous Supervisor**: Orchestrates JD → resume → apply for every job with zero manual input.
+- **Backend Integration**: Single set of endpoints for jobs, resume bundle, progress updates, and final artifacts (stubbed by default).
+- **Progress Streaming**: Optional `--stream` flag to mirror agent progress in the frontend progress feed.
+- **CLI Tools**: Run the full flow headless or with console output for quick smoke-tests.
 
 ## Prerequisites
 
@@ -20,28 +21,33 @@ A conversational multi-agent system that automates job application processes usi
 ## Installation
 
 1. **Clone the repository:**
+
    ```bash
    git clone <repository-url>
    cd AgentPlatform
    ```
 
 2. **Create and activate a virtual environment:**
+
    ```bash
    python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
 3. **Install dependencies:**
+
    ```bash
    pip install -r requirements.txt
    ```
 
 4. **Set up your OpenAI API key:**
+
    ```bash
    export OPENAI_API_KEY="your-api-key-here"
    ```
-   
+
    Or add it to your shell profile (`.bashrc`, `.zshrc`, etc.):
+
    ```bash
    echo 'export OPENAI_API_KEY="your-api-key-here"' >> ~/.zshrc
    source ~/.zshrc
@@ -49,57 +55,69 @@ A conversational multi-agent system that automates job application processes usi
 
 ## Usage
 
-## Interactive Demo
+### Automated Demo
 
-Run the conversational demo where you can interact with the agent with toy examples, see Job Description in adapters:
+Run the automated demo. Pass `--stream` to forward progress updates to the frontend/backend (requires backend configuration, see below):
 
 ```bash
-python -m app.interactive_demo
+python -m app.interactive_demo           # local stub, console-only
+python -m app.interactive_demo --stream  # stream events to configured backend
 ```
 
 ## How It Works
 
-1. **Job Loading**: The system loads 3 sample jobs from the toy data 
-2. **JD Analysis**: Analyzes each job description and extracts key requirements
-3. **Resume Tailoring**: Customizes your resume to match job requirements
-4. **Human Review**: Supervisor pauses for your approval and feedback
-5. **Cover Letter Generation**: Creates personalized cover letters
-6. **Queue Processing**: Automatically moves to the next job
-
-## Interactive Commands
-
-When the supervisor asks for input, you can use natural language:
-
-- **Approval**: "looks good", "proceed", "approve", "continue"
-- **Rejection**: "skip this job", "reject", "next job"
-- **Refinement**: "improve the resume", "rewrite the cover letter"
-- **Display**: "show me the resume", "show the cover letter"
-- **Exit**: "quit", "exit", "stop"
+1. **Resume Bundle**: On startup the agent fetches the latest resume PDFs/text from the backend (or stub).
+2. **Job Intake**: `GET /api/jobs` returns up to 30 jobs; the supervisor processes them sequentially.
+3. **JD Analysis**: The JD agent extracts structure that downstream steps use.
+4. **Resume Tailoring**: The resume fitter proposes edits, renders the updated Markdown, and converts it to a PDF.
+5. **Application Packaging**: The applier drafts a cover letter, renders it to PDF, and calls `POST /api/results` with both PDFs plus the apply URL.
+6. **Progress Feed**: Each stage emits `{ message, stage, timestamp }` via `POST /api/progress` when `--stream` (or `stream_progress`) is enabled.
 
 ## Project Structure
+
 AgentPlatform/
 ├── app/
-│   ├── config.py          # LLM configuration
-│   ├── graph.py           # LangGraph workflow definition
-│   ├── interactive_demo.py # Interactive demo script
-│   ├── main.py            # Simple demo script
-│   └── state.py           # State schema definition
-├── agents/
-│   ├── jd_analyst.py      # Job description analysis agent
-│   ├── resume_fitter.py   # Resume tailoring agent
-│   └── applier.py         # Application generation agent
-├── adapters/
-│   ├── toy_jobs.py        # Sample job data
-│   └── toy_store.py       # Sample storage adapter
-├── common/
-│   └── models.py          # Pydantic models
-├── tools/                 # Agent tools
-├── requirements.txt       # Python dependencies
-└── README.md             # This file
+│   ├── backend_api.py        # Backend client (real endpoints or stub)
+│   ├── config.py             # LLM + backend configuration
+│   ├── graph.py              # LangGraph workflow definition
+│   ├── interactive_demo.py   # CLI demo with optional progress streaming
+│   ├── main.py               # Fire-and-forget sample runner
+│   └── state.py              # Shared state schema
+├── agents/                   # JD analyst, resume fitter, applier
+├── common/pdf_utils.py       # Text → PDF helper
+├── tools/                    # Reusable LangChain tools + progress bridge
+├── JSONINFO.MD               # JSON payload reference for the integration
+└── requirements.txt          # Python dependencies
 
-##Configuration
-Edit app/config.py to customize:
-Models: Change BOSS_MODEL and WORKER_MODEL
-Temperature: Adjust model creativity (0 = deterministic)
-Human Approval: Toggle HUMAN_APPROVAL_REQUIRED
+## API Contract
 
+The agreed JSON payloads for the frontend/backend bridge live in `JSONINFO.MD`. In short:
+
+| Endpoint             | Method | Purpose                         |
+|----------------------|--------|---------------------------------|
+| `/api/jobs`          | GET    | Returns the batch of jobs.      |
+| `/api/resume`        | GET    | Returns resume PDFs + plaintext.|
+| `/api/results`       | POST   | Receives `{ jobId, resumePdfB64, coverLetterPdfB64, applyUrl }`. |
+| `/api/progress`      | POST   | Receives `{ message, stage, timestamp }`. |
+
+## Backend Configuration
+
+Set the following environment variables to connect to your backend:
+
+```bash
+export BACKEND_BASE_URL="https://api.example.com"
+export BACKEND_API_KEY="your-api-key"
+export BACKEND_USE_STUB=false        # defaults to true when BACKEND_BASE_URL is unset
+export BACKEND_TIMEOUT=30            # optional request timeout in seconds
+```
+
+- When `BACKEND_BASE_URL` is not provided (or `BACKEND_USE_STUB=true`) the workflow falls back to in-memory stubs for jobs, resume bundle, and results.
+- Progress events are sent only when `stream_progress` is enabled (e.g., `python -m app.interactive_demo --stream`).
+- If you expand the API surface, document the payloads in `JSONINFO.MD` to keep the frontend/agent/backends in sync.
+
+## Configuration
+
+Edit `app/config.py` to customise:
+- `BOSS_MODEL`, `WORKER_MODEL`: Models used for supervisor/workers.
+- `BACKEND_*`: Override base URL, API key, timeout, or force stub usage.
+- `HUMAN_APPROVAL_REQUIRED`: Legacy flag (off by default in the automated flow).

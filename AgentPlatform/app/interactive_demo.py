@@ -1,24 +1,38 @@
+import argparse
+
 from app.graph import app
 from app.state import AppState
-from langchain_core.messages import HumanMessage
 
-def run_conversational():
-    """Run workflow with conversational HITL"""
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run the conversational job application workflow."
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Stream intermediate progress events to the backend.",
+    )
+    return parser.parse_args()
+
+
+def run_conversational(*, stream: bool = False):
+    """Run the automated job-application workflow."""
     print("\n" + "="*70)
-    print("  🚀 CONVERSATIONAL JOB APPLICATION AGENT".center(70))
+    print("  🚀 JOB APPLICATION AGENT (AUTO MODE)".center(70))
     print("="*70)
-    print("\nThe supervisor will consult you at key decision points.")
-    print("You can give feedback in natural language!\n")
+    print("\nThe agent will process the available jobs end-to-end with no manual input.")
+    print("Use --stream to forward progress updates to the frontend backend.\n")
     
     state: AppState = {
         "user_goal": "Apply to backend jobs. Respect visa policy.",
-        "resume_md": "# Alex Tan — Resume\n\n- Python, SQL, Airflow, LangChain, AWS\n- Projects: WeatherApp (FastAPI, Postgres)\n- Education: MSCS @ USF\n",
         "current_job": None,
         "queue": [],
         "artifacts": {},
-        "approvals": {},
-        "messages": [],
-        "route": None
+        "route": None,
+        "stream_progress": stream,
+        "resume_text": None,
+        "resume_pdf_b64": None,
     }
     
     config = {"configurable": {"thread_id": "conv-demo"}}
@@ -27,32 +41,6 @@ def run_conversational():
         # Stream events
         for event in app.stream(state, config=config, stream_mode="values"):
             state = event
-            
-            # If in HITL and waiting for input
-            if state.get('route') == 'HITL':
-                # Check if we already have user message
-                messages = state.get('messages', [])
-                if not messages or not isinstance(messages[-1], HumanMessage):
-                    # Need user input
-                    print("\n" + "─"*70)
-                    print("💬 SUPERVISOR:", messages[-1].content if messages else "What would you like to do?")
-                    print("─"*70)
-                    print("\nYou can say things like:")
-                    print("  • 'looks good, proceed'")
-                    print("  • 'skip this job'")
-                    print("  • 'improve the resume'")
-                    print("  • 'rewrite the cover letter'")
-                    print("  • 'quit'")
-                    
-                    user_input = input("\n👤 You: ").strip()
-                    
-                    if user_input.lower() in ['quit', 'exit', 'stop']:
-                        print("\n🛑 Stopping workflow...")
-                        return
-                    
-                    # Add user message and continue
-                    state['messages'].append(HumanMessage(content=user_input))
-                    continue
             
             # Check if done
             if state.get('route') == 'DONE':
@@ -70,6 +58,7 @@ def run_conversational():
 
 if __name__ == "__main__":
     try:
-        run_conversational()
+        args = parse_args()
+        run_conversational(stream=args.stream)
     except KeyboardInterrupt:
         print("\n\n🛑 Workflow interrupted (Ctrl+C)")

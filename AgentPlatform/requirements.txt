@@ -3,3 +3,5 @@ langgraph
 langchain-openai
 pydantic
 langgraph-supervisor
+requests
+fpdf2

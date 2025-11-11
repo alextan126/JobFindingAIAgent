@@ -6,12 +6,13 @@ def run_demo():
     
     initial: AppState = {
         "user_goal": "Apply to backend jobs. Respect visa policy.",
-        "resume_md": "# Alex Tan — Resume\n\n- Python, SQL, Airflow, LangChain, AWS\n- Projects: WeatherApp (FastAPI, Postgres)\n- Education: MSCS @ USF\n",
         "current_job": None,
         "queue": [],
         "artifacts": {},
-        "approvals": {},
-        "route": None
+        "route": None,
+        "stream_progress": False,
+        "resume_text": None,
+        "resume_pdf_b64": None,
     }
     
     config = {"configurable": {"thread_id": "demo-1"}}
@@ -19,9 +20,9 @@ def run_demo():
     final = app.invoke(initial, config=config)
     
     print("\n" + "✨ WORKFLOW COMPLETE ".center(60, "="))
+    artifacts = final.get('artifacts', {})
     print(f"\nResult: {final.get('last_result')}")
-    print(f"Approvals: {final.get('approvals', {})}")
-    print(f"Artifacts: {list(final.get('artifacts', {}).keys())}\n")
+    print(f"Artifacts saved: {sorted(list(artifacts.keys()))}\n")
 
 if __name__ == "__main__":
     run_demo()
