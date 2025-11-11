@@ -12,6 +12,7 @@ import io.javalin.http.HttpStatus;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * REST API server for the Job Finding AI Agent.
@@ -80,6 +81,19 @@ public class ApiServer {
         System.out.println("   GET  /api/users/{email}/applications");
         System.out.println("   PATCH /api/applications/{id}/status");
         System.out.println("   GET  /api/users/{email}/applications/stats");
+    }
+
+    public static void main(String[] args) {
+        String jdbcUrl = Optional.ofNullable(System.getenv("JDBC_URL"))
+            .orElse("jdbc:sqlite:jobs.db");
+        String apiKey = Optional.ofNullable(System.getenv("OPENAI_API_KEY"))
+            .orElse("");
+        int port = Optional.ofNullable(System.getenv("API_SERVER_PORT"))
+            .map(Integer::parseInt)
+            .orElse(8080);
+
+        ApiServer server = new ApiServer(jdbcUrl, apiKey);
+        server.start(port);
     }
 
     // ========== User Endpoints ==========

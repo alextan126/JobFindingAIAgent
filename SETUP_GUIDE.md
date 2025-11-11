@@ -94,10 +94,10 @@ You should see:
 Test the backend:
 
 ```bash
-curl http://localhost:8080/api/health
+curl http://localhost:7071/api/health
 ```
 
-Expected response: `{"status":"ok","message":"Job Finding AI Agent API"}`
+Expected response: `{"status":"ok","message":"Simple Agent API"}`
 
 ## Step 5: Install Frontend Dependencies
 
