@@ -3,6 +3,7 @@ from langgraph.prebuilt import InjectedState
 from typing import Annotated
 from common.models import JDSummary
 from app.config import worker_llm
+from tools.progress import maybe_report_progress
 
 @tool
 def analyze_current_job(state: Annotated[dict, InjectedState]) -> str:
@@ -17,7 +18,13 @@ def analyze_current_job(state: Annotated[dict, InjectedState]) -> str:
     
     job_id = current_job.get('id', 'unknown')
     company = current_job.get('company', 'unknown')
-    job_post = current_job.get('jd', '')
+    job_post = (
+        current_job.get('jd')
+        or current_job.get('job_description')
+        or current_job.get('description')
+        or current_job.get('text')
+        or ''
+    )
     
     if not job_post:
         return "ERROR: Job description is empty"
@@ -34,6 +41,17 @@ def analyze_current_job(state: Annotated[dict, InjectedState]) -> str:
     state['artifacts']['jd_summary'] = jd_summary
     
     # Return formatted summary for agent
+    maybe_report_progress(
+        state,
+        stage="jd_analysis",
+        status="completed",
+        details={
+            "job_id": job_id,
+            "company": company,
+            "summary": jd_summary,
+        },
+    )
+
     return f"""Job Analysis Complete for {company}!
 
 Job ID: {job_id}

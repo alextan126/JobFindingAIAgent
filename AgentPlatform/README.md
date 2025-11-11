@@ -1,15 +1,10 @@
 # Job Application Agent Platform
 
-A conversational multi-agent system that automates job application processes using LangGraph. The system includes intelligent agents for job description analysis, resume tailoring, and application generation, with human-in-the-loop supervision.
+An automated multi-agent workflow built with LangGraph that pulls jobs from a backend, tailors application materials, and streams progress back to the frontend.
 
 ## Features
 
-- **JD Analyst**: Analyzes job descriptions and extracts structured requirements
-- **Resume Fitter**: Tailors resumes to match specific job requirements
-- **Applier**: Generates personalized cover letters
-- **Intelligent Supervisor**: Manages workflow and makes routing decisions
-- **Human-in-the-Loop**: Interactive approval and feedback system
-- **Interactive-Tool**: Coomand line tool to interactively act with agent for test/dev/demo
+
 
 ## Prerequisites
 
@@ -53,28 +48,33 @@ The easiest way to run the Agent Platform is using Docker, which handles all dep
 ### Option 2: Local Installation
 
 1. **Clone the repository:**
+
    ```bash
    git clone <repository-url>
    cd AgentPlatform
    ```
 
 2. **Create and activate a virtual environment:**
+
    ```bash
    python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
 3. **Install dependencies:**
+
    ```bash
    pip install -r requirements.txt
    ```
 
 4. **Set up your OpenAI API key:**
+
    ```bash
    export OPENAI_API_KEY="your-api-key-here"
    ```
 
    Or add it to your shell profile (`.bashrc`, `.zshrc`, etc.):
+
    ```bash
    echo 'export OPENAI_API_KEY="your-api-key-here"' >> ~/.zshrc
    source ~/.zshrc
@@ -82,32 +82,23 @@ The easiest way to run the Agent Platform is using Docker, which handles all dep
 
 ## Usage
 
-## Interactive Demo
+### Automated Demo
 
-Run the conversational demo where you can interact with the agent with toy examples, see Job Description in adapters:
+Run the automated demo. Pass `--stream` to forward progress updates to the frontend/backend (requires backend configuration, see below):
 
 ```bash
-python -m app.interactive_demo
+python -m app.interactive_demo           # local stub, console-only
+python -m app.interactive_demo --stream  # stream events to configured backend
 ```
 
 ## How It Works
 
-1. **Job Loading**: The system loads 3 sample jobs from the toy data 
-2. **JD Analysis**: Analyzes each job description and extracts key requirements
-3. **Resume Tailoring**: Customizes your resume to match job requirements
-4. **Human Review**: Supervisor pauses for your approval and feedback
-5. **Cover Letter Generation**: Creates personalized cover letters
-6. **Queue Processing**: Automatically moves to the next job
-
-## Interactive Commands
-
-When the supervisor asks for input, you can use natural language:
-
-- **Approval**: "looks good", "proceed", "approve", "continue"
-- **Rejection**: "skip this job", "reject", "next job"
-- **Refinement**: "improve the resume", "rewrite the cover letter"
-- **Display**: "show me the resume", "show the cover letter"
-- **Exit**: "quit", "exit", "stop"
+1. **Resume Bundle**: On startup the agent fetches the latest resume PDFs/text from the backend (or stub).
+2. **Job Intake**: `GET /api/jobs` returns up to 30 jobs; the supervisor processes them sequentially.
+3. **JD Analysis**: The JD agent extracts structure that downstream steps use.
+4. **Resume Tailoring**: The resume fitter proposes edits, renders the updated Markdown, and converts it to a PDF.
+5. **Application Packaging**: The applier drafts a cover letter, renders it to PDF, and calls `POST /api/results` with both PDFs plus the apply URL.
+6. **Progress Feed**: Each stage emits `{ message, stage, timestamp }` via `POST /api/progress` when `--stream` (or `stream_progress`) is enabled.
 
 <pre>
 
@@ -142,3 +133,7 @@ Models: Change BOSS_MODEL and WORKER_MODEL
 Temperature: Adjust model creativity (0 = deterministic)
 Human Approval: Toggle HUMAN_APPROVAL_REQUIRED
 
+Edit `app/config.py` to customise:
+- `BOSS_MODEL`, `WORKER_MODEL`: Models used for supervisor/workers.
+- `BACKEND_*`: Override base URL, API key, timeout, or force stub usage.
+- `HUMAN_APPROVAL_REQUIRED`: Legacy flag (off by default in the automated flow).
