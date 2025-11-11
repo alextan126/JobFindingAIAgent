@@ -3,6 +3,7 @@ import base64
 from langchain_core.prompts import ChatPromptTemplate
 
 from app.config import worker_llm
+from app.service_state import service_state
 from common.pdf_utils import text_to_pdf_bytes
 
 def resume_fitter_agent(state: dict) -> dict:
@@ -14,7 +15,18 @@ def resume_fitter_agent(state: dict) -> dict:
     job = state.get("current_job", {})
 
     resume_text = state.get("resume_text") or ""
-    if not resume_text:
+    resume_pdf_b64 = state.get("resume_pdf_b64")
+    projects_pdf_b64 = state.get("projects_pdf_b64")
+
+    if not resume_text or not resume_pdf_b64:
+        bundle = service_state.get_resume_bundle()
+        resume_text = resume_text or bundle.get("resumeText") or bundle.get("resume_text") or ""
+        resume_pdf_b64 = resume_pdf_b64 or bundle.get("resumePdfB64") or bundle.get("resume_pdf_b64")
+        projects_pdf_b64 = projects_pdf_b64 or bundle.get("projectsPdfB64") or bundle.get(
+            "projects_pdf_b64"
+        )
+
+    if not resume_text or not resume_pdf_b64:
         return {**state, "last_result": "No resume found"}
     
     if not jd_summary:
@@ -55,7 +67,9 @@ def resume_fitter_agent(state: dict) -> dict:
     print(rendered)
     print("="*60)
     
-    pdf_bytes = text_to_pdf_bytes(rendered, title=f"{job.get('company', 'Company')} — Tailored Resume")
+    pdf_bytes = text_to_pdf_bytes(
+        rendered, title=f"{job.get('company', 'Company')} - Tailored Resume"
+    )
     pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
 
     # Update state
@@ -72,7 +86,7 @@ def resume_fitter_agent(state: dict) -> dict:
         **state,
         "resume_text": rendered,
         "resume_pdf_b64": pdf_b64,
-        "projects_pdf_b64": state.get("projects_pdf_b64"),
+        "projects_pdf_b64": projects_pdf_b64,
         "artifacts": artifacts,
         "last_result": "Resume tailored"
     }

@@ -16,3 +16,4 @@ class AppState(TypedDict, total=False):
     hitl_timeout_at: Optional[float]
     resume_text: Optional[str]
     resume_pdf_b64: Optional[str]
+    projects_pdf_b64: Optional[str]

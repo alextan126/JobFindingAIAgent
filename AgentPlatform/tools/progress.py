@@ -1,11 +1,11 @@
-"""Shared helper for reporting agent progress back to the backend service."""
+"""Shared helper for reporting agent progress to the FastAPI service."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from app.config import backend_client
+from app.service_state import service_state
 
 
 def maybe_report_progress(
@@ -15,10 +15,7 @@ def maybe_report_progress(
     status: str,
     details: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Send a progress event if streaming is enabled for the workflow."""
-    if not state.get("stream_progress"):
-        return
-
+    """Record a progress event for the current job."""
     current_job = state.get("current_job") or {}
     job_id = current_job.get("jobId") or current_job.get("id")
     company = current_job.get("company")
@@ -34,10 +31,15 @@ def maybe_report_progress(
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).isoformat()
 
-    backend_client().post_progress(
-        message=message,
-        stage=stage,
-        timestamp=timestamp,
+    service_state.append_progress(
+        {
+            "message": message,
+            "stage": stage,
+            "status": status,
+            "timestamp": timestamp,
+            "jobId": job_id,
+            "company": company,
+        }
     )
 
 

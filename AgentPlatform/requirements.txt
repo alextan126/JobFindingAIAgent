@@ -5,3 +5,5 @@ pydantic
 langgraph-supervisor
 requests
 fpdf2
+fastapi
+uvicorn
