@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from app.config import worker_llm
 from common.models import JDSummary
+from tools.progress import maybe_report_progress
 
 def jd_analyst_agent(state: dict) -> dict:
     """
@@ -36,6 +37,20 @@ def jd_analyst_agent(state: dict) -> dict:
     print(f"   Location: {jd_summary.get('location')}")
     print(f"   Visa: {jd_summary.get('visa_sponsorship')}")
     print(f"   Must-have: {', '.join(jd_summary.get('must_have', [])[:3])}...")
+
+    maybe_report_progress(
+        state,
+        stage="jd_analysis",
+        status="summary",
+        details={
+            "message": f"JD summary ready for {company}",
+            "title": jd_summary.get("title"),
+            "location": jd_summary.get("location"),
+            "visa": jd_summary.get("visa_sponsorship"),
+            "must_have": jd_summary.get("must_have"),
+            "nice_to_have": jd_summary.get("nice_to_have"),
+        },
+    )
     
     return {
         **state,

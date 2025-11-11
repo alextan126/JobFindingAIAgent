@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from contextlib import asynccontextmanager
 
 from app.backend_api import BackendAPIError
 from app.config import backend_client
@@ -21,9 +22,7 @@ class ResumeUploadRequest(BaseModel):
     projects_pdf_b64: Optional[str] = Field(None, alias="projectsPdfB64")
     resume_text: Optional[str] = Field(None, alias="resumeText")
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 class ResumeUploadResponse(BaseModel):
@@ -34,9 +33,7 @@ class NextJobOptions(BaseModel):
     stream: bool = True
     thread_id: Optional[str] = Field(None, alias="threadId")
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 class NextJobRequest(BaseModel):
@@ -44,9 +41,7 @@ class NextJobRequest(BaseModel):
     job: Optional[Dict[str, Any]] = None
     options: NextJobOptions = NextJobOptions()
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 class ResetRequest(BaseModel):
@@ -54,9 +49,7 @@ class ResetRequest(BaseModel):
     clear_jobs: bool = Field(False, alias="clearJobs")
     clear_resume: bool = Field(True, alias="clearResume")
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 def _canonical_job(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -241,18 +234,21 @@ def parse_args() -> argparse.Namespace:
 
 
 runner = AgentRunner()
-api = FastAPI(title="Agent Workflow Service", version="2.0.0")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    _bootstrap_from_backend()
+    yield
+
+
+api = FastAPI(title="Agent Workflow Service", version="2.0.0", lifespan=lifespan)
 api.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@api.on_event("startup")
-def _startup() -> None:
-    _bootstrap_from_backend()
 
 
 @api.get("/health")
@@ -283,15 +279,19 @@ def get_resume() -> Dict[str, Any]:
 
 @api.post("/api/nextJob")
 def trigger_next_job(request: NextJobRequest) -> Dict[str, Any]:
-    if request.job is None and request.job_id is None:
-        raise HTTPException(status_code=400, detail="Provide job payload or jobId")
+    job_payload: Optional[Dict[str, Any]]
 
     if request.job:
-        job = service_state.upsert_job(request.job)
-    else:
-        job = service_state.get_job(request.job_id or "")
-        if not job:
+        stored = service_state.upsert_job(request.job)
+        job_payload = service_state.take_job(stored["jobId"]) or stored
+    elif request.job_id:
+        job_payload = service_state.take_job(request.job_id)
+        if job_payload is None:
             raise HTTPException(status_code=404, detail="Unknown jobId")
+    else:
+        job_payload = service_state.pop_next_job()
+        if job_payload is None:
+            raise HTTPException(status_code=404, detail="No jobs available")
 
     if not service_state.has_resume():
         raise HTTPException(
@@ -301,14 +301,14 @@ def trigger_next_job(request: NextJobRequest) -> Dict[str, Any]:
 
     try:
         run_id = runner.start(
-            job=job,
+            job=job_payload,
             stream=request.options.stream,
             thread_id=request.options.thread_id,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
-    return {"runId": run_id, "job": job}
+    return {"runId": run_id, "job": job_payload}
 
 
 @api.get("/api/status")

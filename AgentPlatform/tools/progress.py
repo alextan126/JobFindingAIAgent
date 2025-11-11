@@ -16,18 +16,23 @@ def maybe_report_progress(
     details: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Record a progress event for the current job."""
+    if not state.get("stream_progress"):
+        return
+
     current_job = state.get("current_job") or {}
     job_id = current_job.get("jobId") or current_job.get("id")
     company = current_job.get("company")
 
-    message = (details or {}).get("message")
+    details = details or {}
+
+    message = details.get("message")
     if not message:
         job_ref = f"{company} ({job_id})" if company and job_id else company or job_id or "job"
         verb = status.replace("_", " ").capitalize()
         action = stage.replace("_", " ")
         message = f"{verb} {action} for {job_ref}"
 
-    timestamp = (details or {}).get("timestamp")
+    timestamp = details.get("timestamp")
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -39,6 +44,7 @@ def maybe_report_progress(
             "timestamp": timestamp,
             "jobId": job_id,
             "company": company,
+            "details": {k: v for k, v in details.items() if k not in {"message", "timestamp"}},
         }
     )
 

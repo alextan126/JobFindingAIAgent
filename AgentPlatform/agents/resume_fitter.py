@@ -5,6 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from app.config import worker_llm
 from app.service_state import service_state
 from common.pdf_utils import text_to_pdf_bytes
+from tools.progress import maybe_report_progress
 
 def resume_fitter_agent(state: dict) -> dict:
     """
@@ -27,6 +28,14 @@ def resume_fitter_agent(state: dict) -> dict:
         )
 
     if not resume_text or not resume_pdf_b64:
+        maybe_report_progress(
+            state,
+            stage="resume_tailoring",
+            status="blocked",
+            details={
+                "message": "Resume bundle empty; waiting for /api/uploadResume",
+            },
+        )
         return {**state, "last_result": "No resume found"}
     
     if not jd_summary:
@@ -47,6 +56,16 @@ def resume_fitter_agent(state: dict) -> dict:
     edits = worker_llm().invoke(
         edit_prompt.format_messages(resume=resume_text, jd=jd_summary)
     ).content
+    
+    maybe_report_progress(
+        state,
+        stage="resume_tailoring",
+        status="edits",
+        details={
+            "message": f"Proposed resume edits for {job.get('company')}",
+            "edits": edits,
+        },
+    )
     
     # Apply edits
     render_prompt = ChatPromptTemplate.from_messages([
@@ -82,7 +101,7 @@ def resume_fitter_agent(state: dict) -> dict:
     
     print(f"\n✅ Resume tailored")
     
-    return {
+    result_state = {
         **state,
         "resume_text": rendered,
         "resume_pdf_b64": pdf_b64,
@@ -90,3 +109,15 @@ def resume_fitter_agent(state: dict) -> dict:
         "artifacts": artifacts,
         "last_result": "Resume tailored"
     }
+
+    maybe_report_progress(
+        result_state,
+        stage="resume_tailoring",
+        status="finished",
+        details={
+            "message": f"Tailored resume ready for {job.get('company')}",
+            "resume_preview": rendered[:800],
+        },
+    )
+
+    return result_state

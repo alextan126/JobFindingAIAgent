@@ -36,6 +36,12 @@ def applier_agent(state: dict) -> dict:
     company = job.get("company", "the company")
 
     if not resume_pdf_b64:
+        maybe_report_progress(
+            state,
+            stage="application_package",
+            status="blocked",
+            details={"message": "Missing tailored resume; cannot draft cover letter"},
+        )
         return {**state, "last_result": "No tailored resume PDF found"}
 
     maybe_report_progress(
@@ -56,6 +62,16 @@ def applier_agent(state: dict) -> dict:
     print("=" * 60)
     print(letter)
     print("=" * 60)
+
+    maybe_report_progress(
+        state,
+        stage="application_package",
+        status="draft",
+        details={
+            "message": f"Cover letter drafted for {company}",
+            "cover_letter_preview": letter[:800],
+        },
+    )
 
     cover_letter_pdf_bytes = text_to_pdf_bytes(letter, title=f"{company} — Cover Letter")
     cover_letter_pdf_b64 = base64.b64encode(cover_letter_pdf_bytes).decode("utf-8")
@@ -78,6 +94,16 @@ def applier_agent(state: dict) -> dict:
         stage="cover_letter",
         status="finished",
         details={"job_id": job_id, "company": company},
+    )
+
+    maybe_report_progress(
+        state,
+        stage="application_package",
+        status="finished",
+        details={
+            "message": f"Application package ready for {company}",
+            "apply_url": artifacts["submission_payload"]["apply_url"],
+        },
     )
 
     print(f"\n✅ Application package ready for {company}")

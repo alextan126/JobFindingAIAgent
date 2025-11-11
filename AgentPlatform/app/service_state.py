@@ -59,6 +59,24 @@ class ServiceState:
             self._jobs[job_id] = canonical
         return canonical
 
+    def pop_next_job(self) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            while self._job_order:
+                job_id = self._job_order.pop(0)
+                job = self._jobs.get(job_id)
+                if job:
+                    return copy.deepcopy(job)
+        return None
+
+    def take_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return None
+            if job_id in self._job_order:
+                self._job_order.remove(job_id)
+            return copy.deepcopy(job)
+
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
             job = self._jobs.get(job_id)
