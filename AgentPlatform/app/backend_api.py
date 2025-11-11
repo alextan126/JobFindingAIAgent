@@ -56,14 +56,14 @@ class BackendAPI:
     )
 
     _stub_resume_bundle = {
-        "resume_text": (
+        "resumeText": (
             "Alex Tan\n"
             "Backend Engineer experienced with Python, SQL, Airflow, LangChain, AWS.\n"
             "Projects: WeatherApp (FastAPI, Postgres)\n"
             "Education: MSCS @ USF\n"
         ),
-        "resume_pdf_b64": base64.b64encode(b"STUB_RESUME_PDF").decode("utf-8"),
-        "projects_pdf_b64": base64.b64encode(b"STUB_PROJECTS_PDF").decode("utf-8"),
+        "resumePdfB64": base64.b64encode(b"STUB_RESUME_PDF").decode("utf-8"),
+        "projectsPdfB64": base64.b64encode(b"STUB_PROJECTS_PDF").decode("utf-8"),
     }
 
     def __init__(
@@ -89,7 +89,7 @@ class BackendAPI:
         if not self.base_url:
             raise BackendAPIError("Backend base URL is not configured.")
 
-        url = f"{self.base_url}/jobs"
+        url = f"{self.base_url}/api/jobs"
         response = self._request("GET", url)
         payload = response.json()
         jobs = payload.get("jobs", [])
@@ -104,7 +104,7 @@ class BackendAPI:
         if not self.base_url:
             raise BackendAPIError("Backend base URL is not configured.")
 
-        url = f"{self.base_url}/resume"
+        url = f"{self.base_url}/api/resume"
         response = self._request("GET", url)
         return response.json()
 
@@ -130,7 +130,7 @@ class BackendAPI:
         if not self.base_url:
             raise BackendAPIError("Backend base URL is not configured.")
 
-        url = f"{self.base_url}/results"
+        url = f"{self.base_url}/api/results"
         payload = {
             "jobId": job_id,
             "resumePdfB64": base64.b64encode(resume_pdf_bytes).decode("utf-8"),
@@ -163,7 +163,7 @@ class BackendAPI:
         if not self.base_url:
             raise BackendAPIError("Backend base URL is not configured.")
 
-        url = f"{self.base_url}/progress"
+        url = f"{self.base_url}/api/progress"
         self._request("POST", url, json=payload)
 
     # ------------------------------------------------------------------ #
@@ -182,15 +182,6 @@ class BackendAPI:
             message = f"{method} {url} returned {response.status_code}: {response.text}"
             raise BackendAPIError(message)
         return response
-
-    def _stub_fetch_next_job(self) -> Optional[Dict[str, Any]]:
-        if self._stub_index >= len(self._stub_jobs):
-            return None
-        job = self._stub_jobs[self._stub_index]
-        self._stub_index += 1
-        logger.debug("[STUB] Supplying job %s", job.get("id"))
-        return job.copy()
-
 
 def build_backend_client() -> BackendAPI:
     """Factory wired to environment variables."""

@@ -81,3 +81,52 @@ HEADLESS=false java -jar target/link-collector-0.1.0.jar collect-github "https:/
 
 # Inspect database
 sqlite3 jobs.db
+```
+
+---
+
+## Agent API (for the AI workflow)
+
+A lightweight HTTP server exposes the data the AI agent expects.  
+It runs beside the ingestion pipeline and reads directly from the same SQLite database.
+
+### Environment variables
+
+| Variable             | Purpose                                                | Default                  |
+|----------------------|--------------------------------------------------------|--------------------------|
+| `JDBC_URL`           | JDBC connection string                                 | `jdbc:sqlite:jobs.db`    |
+| `AGENT_API_PORT`     | Port to bind                                           | `7071`                   |
+| `AGENT_JOB_LIMIT`    | Maximum jobs to return in `/api/jobs`                  | `30`                     |
+| `AGENT_RESUME_EMAIL` | Optional user email to source resume text/PDF          | _none_ (returns empty)   |
+| `AGENT_PROJECTS_PDF` | Optional path to a supporting projects PDF             | _none_ (returns empty)   |
+
+### Start the server
+
+```bash
+# After mvn clean package
+java -cp target/link-collector-0.1.0.jar com.example.api.SimpleApiServer
+```
+
+### Quick smoke-tests
+
+```bash
+# Job payload (matches JSONINFO.MD)
+curl http://localhost:7071/api/jobs | jq
+
+# Resume bundle (returns base64 fields + plaintext)
+curl http://localhost:7071/api/resume | jq
+
+# Push a progress update
+curl -X POST http://localhost:7071/api/progress \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Tailoring resume","stage":"resume_tailoring","timestamp":"2025-11-11T08:00:00Z"}'
+
+# Push results (tailored PDFs)
+curl -X POST http://localhost:7071/api/results \
+  -H 'Content-Type: application/json' \
+  -d '{"jobId":"JOB-123","resumePdfB64":"...","coverLetterPdfB64":"...","applyUrl":"https://company/jobs/123"}'
+
+# Inspect buffered results/progress
+curl http://localhost:7071/api/results | jq
+curl http://localhost:7071/api/progress | jq
+```
