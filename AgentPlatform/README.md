@@ -4,13 +4,7 @@ An automated multi-agent workflow built with LangGraph that pulls jobs from a ba
 
 ## Features
 
-- **JD Analyst**: Summarises each job and extracts structured requirements for later stages.
-- **Resume Fitter**: Tailors the user’s resume (Markdown + PDF) based on the job summary.
-- **Applier**: Generates a cover letter, renders it to PDF, and posts both PDFs plus the apply URL back to the backend.
-- **Autonomous Supervisor**: Orchestrates JD → resume → apply for every job with zero manual input.
-- **Backend Integration**: Single set of endpoints for jobs, resume bundle, progress updates, and final artifacts (stubbed by default).
-- **Progress Streaming**: Optional `--stream` flag to mirror agent progress in the frontend progress feed.
-- **CLI Tools**: Run the full flow headless or with console output for quick smoke-tests.
+
 
 ## Prerequisites
 
@@ -19,6 +13,39 @@ An automated multi-agent workflow built with LangGraph that pulls jobs from a ba
 - Virtual environment support
 
 ## Installation
+
+### Option 1: Docker (Recommended)
+
+The easiest way to run the Agent Platform is using Docker, which handles all dependencies automatically.
+
+1. **Prerequisites:**
+   - Docker and Docker Compose installed
+   - OpenAI API key
+
+2. **Set up your environment:**
+
+   Create a `.env` file in the project root directory (one level up from `AgentPlatform/`):
+   ```bash
+   cd ..  # Go to project root
+   echo "OPENAI_API_KEY=your-api-key-here" > .env
+   ```
+
+3. **Build and start the services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Run the interactive demo:**
+   ```bash
+   docker-compose exec agent-platform python -m app.interactive_demo
+   ```
+
+5. **Development workflow:**
+   - Edit code in `AgentPlatform/` directory - changes are reflected immediately (no rebuild needed)
+   - Logs: `docker-compose logs agent-platform`
+   - Stop services: `docker-compose down`
+
+### Option 2: Local Installation
 
 1. **Clone the repository:**
 
@@ -73,49 +100,38 @@ python -m app.interactive_demo --stream  # stream events to configured backend
 5. **Application Packaging**: The applier drafts a cover letter, renders it to PDF, and calls `POST /api/results` with both PDFs plus the apply URL.
 6. **Progress Feed**: Each stage emits `{ message, stage, timestamp }` via `POST /api/progress` when `--stream` (or `stream_progress`) is enabled.
 
+<pre>
+
 ## Project Structure
 
+```
 AgentPlatform/
 ├── app/
-│   ├── backend_api.py        # Backend client (real endpoints or stub)
-│   ├── config.py             # LLM + backend configuration
-│   ├── graph.py              # LangGraph workflow definition
-│   ├── interactive_demo.py   # CLI demo with optional progress streaming
-│   ├── main.py               # Fire-and-forget sample runner
-│   └── state.py              # Shared state schema
-├── agents/                   # JD analyst, resume fitter, applier
-├── common/pdf_utils.py       # Text → PDF helper
-├── tools/                    # Reusable LangChain tools + progress bridge
-├── JSONINFO.MD               # JSON payload reference for the integration
-└── requirements.txt          # Python dependencies
-
-## API Contract
-
-The agreed JSON payloads for the frontend/backend bridge live in `JSONINFO.MD`. In short:
-
-| Endpoint             | Method | Purpose                         |
-|----------------------|--------|---------------------------------|
-| `/api/jobs`          | GET    | Returns the batch of jobs.      |
-| `/api/resume`        | GET    | Returns resume PDFs + plaintext.|
-| `/api/results`       | POST   | Receives `{ jobId, resumePdfB64, coverLetterPdfB64, applyUrl }`. |
-| `/api/progress`      | POST   | Receives `{ message, stage, timestamp }`. |
-
-## Backend Configuration
-
-Set the following environment variables to connect to your backend:
-
-```bash
-export BACKEND_BASE_URL="https://api.example.com"
-export BACKEND_API_KEY="your-api-key"
-export BACKEND_USE_STUB=false        # defaults to true when BACKEND_BASE_URL is unset
-export BACKEND_TIMEOUT=30            # optional request timeout in seconds
+│   ├── config.py           # LLM configuration
+│   ├── graph.py            # LangGraph workflow definition
+│   ├── interactive_demo.py # Interactive demo script
+│   ├── main.py             # Simple demo script
+│   └── state.py            # State schema definition
+├── agents/
+│   ├── jd_analyst.py       # Job description analysis agent
+│   ├── resume_fitter.py    # Resume tailoring agent
+│   └── applier.py          # Application generation agent
+├── adapters/
+│   ├── toy_jobs.py         # Sample job data
+│   └── toy_store.py        # Sample storage adapter
+├── common/
+│   └── models.py           # Pydantic models
+├── tools/                  # Agent tools
+├── requirements.txt        # Python dependencies
+└── README.md               # Project documentation
 ```
-
-- When `BACKEND_BASE_URL` is not provided (or `BACKEND_USE_STUB=true`) the workflow falls back to in-memory stubs for jobs, resume bundle, and results.
-- Progress events are sent only when `stream_progress` is enabled (e.g., `python -m app.interactive_demo --stream`).
-- If you expand the API surface, document the payloads in `JSONINFO.MD` to keep the frontend/agent/backends in sync.
+</pre>
 
 ## Configuration
+Edit app/config.py to customize:
+Models: Change BOSS_MODEL and WORKER_MODEL
+Temperature: Adjust model creativity (0 = deterministic)
+Human Approval: Toggle HUMAN_APPROVAL_REQUIRED
 
 Edit `app/config.py` to customise:
 - `BOSS_MODEL`, `WORKER_MODEL`: Models used for supervisor/workers.
