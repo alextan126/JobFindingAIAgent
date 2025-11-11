@@ -1,25 +1,25 @@
 package com.example.app;
 
 import com.example.classify.HostClassifier;
+import com.example.model.JobInfo;
 import com.example.model.JobLink;
 import com.example.model.JobLead;
-import com.example.persistence.JobLinkRepository;
-import com.example.persistence.JobInfoRepository;
-import com.example.persistence.Migrations;
-import com.example.persistence.SqliteJobLinkRepository;
-import com.example.persistence.SqliteJobInfoRepository;
-import com.example.scrape.GitHubLinkCollector;
-import com.example.scrape.JobInfoScraper;
-import com.example.scrape.OpenAIJobParser;
-import com.example.scrape.ResumeParser;
 import com.example.model.User;
 import com.example.model.Application;
-import com.example.model.JobInfo;
 import com.example.model.JobMatch;
+import com.example.persistence.JobInfoRepository;
+import com.example.persistence.JobLinkRepository;
+import com.example.persistence.Migrations;
+import com.example.persistence.SqliteJobInfoRepository;
+import com.example.persistence.SqliteJobLinkRepository;
 import com.example.persistence.UserRepository;
 import com.example.persistence.SqliteUserRepository;
 import com.example.persistence.ApplicationRepository;
 import com.example.persistence.SqliteApplicationRepository;
+import com.example.scrape.GitHubLinkCollector;
+import com.example.scrape.JobInfoScraper;
+import com.example.scrape.OpenAIJobParser;
+import com.example.scrape.ResumeParser;
 import com.example.matcher.JobMatcher;
 import com.example.util.PasswordUtil;
 import com.example.api.ApiServer;
@@ -34,17 +34,45 @@ import java.util.List;
 import java.util.Scanner;
 
 public final class Main {
-    // Load .env file if it exists, otherwise use system environment variables
-    private static final Dotenv dotenv = Dotenv.configure()
-            .ignoreIfMissing()  // Don't fail if .env doesn't exist
-            .load();
+    private static final Dotenv dotenv = loadDotenv();
+    private static final String DEFAULT_JDBC = getEnv("JOBS_DB_URL", "jdbc:sqlite:jobs.db");
+    private static final boolean DEFAULT_HEADLESS = Boolean.parseBoolean(getEnv("HEADLESS", "true"));
+    private static final String OPENAI_API_KEY = getEnv("OPENAI_API_KEY", null);
 
-    private static final String DEFAULT_JDBC =
-            dotenv.get("JOBS_DB_URL", "jdbc:sqlite:jobs.db");
-    private static final boolean DEFAULT_HEADLESS =
-            Boolean.parseBoolean(dotenv.get("HEADLESS", "true"));
-    private static final String OPENAI_API_KEY =
-            dotenv.get("OPENAI_API_KEY");
+    /**
+     * Load .env file if it exists, otherwise return null (will use system env vars)
+     */
+    private static Dotenv loadDotenv() {
+        try {
+            return Dotenv.configure()
+                    .directory(".")
+                    .ignoreIfMissing()
+                    .load();
+        } catch (Exception e) {
+            System.out.println("No .env file found, using system environment variables");
+            return null;
+        }
+    }
+
+    /**
+     * Get environment variable from .env or system env, with fallback
+     */
+    private static String getEnv(String key, String defaultValue) {
+        String value = null;
+
+        // Try .env file first
+        if (dotenv != null) {
+            value = dotenv.get(key);
+        }
+
+        // Fallback to system environment
+        if (value == null) {
+            value = System.getenv(key);
+        }
+
+        // Use default if still null
+        return value != null ? value : defaultValue;
+    }
 
     public static void main(String[] args) throws Exception {
         if (args.length == 0) { printHelp(); return; }
@@ -138,12 +166,10 @@ public final class Main {
 
     private static void collectFromGithub(String readmeUrl) throws Exception {
         System.out.println("JDBC=" + DEFAULT_JDBC);
-        try (var c = java.sql.DriverManager.getConnection(DEFAULT_JDBC);
-             var st = c.createStatement();
-             var rs = st.executeQuery("PRAGMA database_list;")) {
-            while (rs.next()) {
-                System.out.printf("DB ATTACHED: name=%s file=%s%n", rs.getString("name"), rs.getString("file"));
-            }
+
+        // Test database connection
+        try (var c = java.sql.DriverManager.getConnection(DEFAULT_JDBC)) {
+            System.out.println("DB Connection successful: " + c.getMetaData().getDatabaseProductName());
         }
 
         // make sure table exists
@@ -591,20 +617,22 @@ public final class Main {
         server.start(port);
     }
 
+
     private static void printHelp() {
         System.out.println("""
         link-collector commands:
           migrate
           collect-github <README_URL>
-          scrape-jobs [LIMIT]     (default limit: 10)
-          scrape-all              (scrape all unscraped job links)
-          create-user             (create a new user account)
+          scrape-jobs [LIMIT]          (default limit: 10, scrape jobs using OpenAI)
+          scrape-all                   (scrape all unscraped job links)
+          scrape-job-details [limit]   (alternative scraper, default limit: 10)
+          create-user                  (create a new user account)
           parse-resume <email> <resume_file>  (parse resume and extract skills)
-          apply <email> <job_id>  (record a job application)
+          apply <email> <job_id>       (record a job application)
           update-status <app_id> <status>  (update application status)
           my-applications <email> [status]  (view your applications, optionally filtered)
-          match-jobs <email> [limit]  (find best matching jobs based on your skills)
-          api-server [PORT]  (start REST API server for frontend, default port: 8080)
+          match-jobs <email> [limit]   (find best matching jobs based on your skills)
+          api-server [PORT]            (start REST API server for frontend, default port: 8080)
         Env:
           JOBS_DB_URL      (default: jdbc:sqlite:jobs.db)
           HEADLESS         true|false (default: true)

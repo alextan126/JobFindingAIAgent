@@ -6,13 +6,17 @@ services:
       dockerfile: Dockerfile
     container_name: job-link-collector
     volumes:
-      # Persist SQLite database
+      # Persist SQLite database (for local development)
       - ./data/jobs.db:/app/data/jobs.db
       # Mount source code for development (optional)
       # - ./java/link-collector/src:/build/src
     environment:
-      - DATABASE_PATH=/app/data/jobs.db
-      - HEADLESS=true
+      # Database URL - supports both SQLite and PostgreSQL (Supabase)
+      # For SQLite (local dev): jdbc:sqlite:jobs.db
+      # For Supabase: jdbc:postgresql://db.your-project.supabase.co:5432/postgres?user=postgres&password=your-password
+      - JOBS_DB_URL=${JOBS_DB_URL:-jdbc:sqlite:jobs.db}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HEADLESS=${HEADLESS:-true}
     networks:
       - job-agent-network
     # Keep container running for interactive commands

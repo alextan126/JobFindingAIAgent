@@ -32,7 +32,7 @@ public final class SqliteApplicationRepository implements ApplicationRepository 
             ps.setInt(1, application.userId());
             ps.setInt(2, application.jobInfoId());
             ps.setString(3, application.status());
-            ps.setObject(4, application.appliedAt());
+            ps.setTimestamp(4, Timestamp.from(application.appliedAt()));
             ps.setString(5, application.notes());
             ps.setString(6, application.resumeVersion());
 
@@ -173,12 +173,21 @@ public final class SqliteApplicationRepository implements ApplicationRepository 
     }
 
     private Application mapResultSetToApplication(ResultSet rs) throws SQLException {
+        // Handle applied_at: PostgreSQL returns Timestamp, SQLite returns String
+        Instant appliedAt;
+        Object appliedAtObj = rs.getObject("applied_at");
+        if (appliedAtObj instanceof Timestamp) {
+            appliedAt = ((Timestamp) appliedAtObj).toInstant();
+        } else {
+            appliedAt = Instant.parse(rs.getString("applied_at"));
+        }
+
         return Application.builder()
             .id(rs.getInt("id"))
             .userId(rs.getInt("user_id"))
             .jobInfoId(rs.getInt("job_info_id"))
             .status(rs.getString("status"))
-            .appliedAt(Instant.parse(rs.getString("applied_at")))
+            .appliedAt(appliedAt)
             .notes(rs.getString("notes"))
             .resumeVersion(rs.getString("resume_version"))
             .build();

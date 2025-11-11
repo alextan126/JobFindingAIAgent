@@ -53,6 +53,13 @@
             <version>11.13.2</version>
         </dependency>
 
+        <!-- Flyway PostgreSQL database plugin -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+            <version>11.13.2</version>
+        </dependency>
+
         <!-- logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -67,7 +74,14 @@
             <version>0.18.2</version>
         </dependency>
 
-        <!-- dotenv for loading .env files -->
+        <!-- JSON parsing for OpenAI responses -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.10.1</version>
+        </dependency>
+
+        <!-- Load .env files -->
         <dependency>
             <groupId>io.github.cdimascio</groupId>
             <artifactId>dotenv-java</artifactId>
@@ -117,6 +131,8 @@
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>com.example.app.Main</mainClass>
                                 </transformer>
+                                <!-- Merge service files for Flyway plugins -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
                         </configuration>
                     </execution>

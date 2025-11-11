@@ -18,15 +18,18 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
     public void saveAllIgnoreDuplicates(List<JobLink> links) throws Exception {
         try (Connection conn = DriverManager.getConnection(jdbcUrl)) {
             conn.setAutoCommit(false);
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT OR IGNORE INTO job_links(url, host_type, source, discovered_at, status)" +
-                            "VALUES (?, ?, ?, ?, 'new')"
-            )) {
+            // Use database-agnostic INSERT ... ON CONFLICT for PostgreSQL compatibility
+            String sql = jdbcUrl.contains("postgresql")
+                ? "INSERT INTO job_links(url, host_type, source, discovered_at, status) VALUES (?, ?, ?, ?, 'new') ON CONFLICT (url) DO NOTHING"
+                : "INSERT OR IGNORE INTO job_links(url, host_type, source, discovered_at, status) VALUES (?, ?, ?, ?, 'new')";
+
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 for (JobLink l : links) {
                     ps.setString(1, l.url());
                     ps.setString(2, l.hostType());
                     ps.setString(3, l.source());
-                    ps.setObject(4, l.discoveredAt());
+                    // Convert Instant to Timestamp for PostgreSQL compatibility
+                    ps.setTimestamp(4, java.sql.Timestamp.from(l.discoveredAt()));
                     System.out.printf(
                             "DBG insert: url=%s hostType=%s source=%s discoveredAt=%s%n",
                             l.url(), l.hostType(), l.source(), l.discoveredAt()
@@ -89,12 +92,21 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
             List<JobLinkWithId> results = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
+                    // Handle discovered_at: PostgreSQL returns Timestamp, SQLite returns String
+                    Instant discoveredAt;
+                    Object discoveredAtObj = rs.getObject("discovered_at");
+                    if (discoveredAtObj instanceof Timestamp) {
+                        discoveredAt = ((Timestamp) discoveredAtObj).toInstant();
+                    } else {
+                        discoveredAt = Instant.parse(rs.getString("discovered_at"));
+                    }
+
                     results.add(new JobLinkWithId(
                         rs.getInt("id"),
                         rs.getString("url"),
                         rs.getString("host_type"),
                         rs.getString("source"),
-                        Instant.parse(rs.getString("discovered_at")),
+                        discoveredAt,
                         rs.getString("status")
                     ));
                 }
@@ -138,6 +150,20 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
             ps.setObject(2, Instant.now());
             ps.setInt(3, jobLinkId);
             ps.executeUpdate();
+        }
+    }
+
+    public String getJobLinkUrl(int jobLinkId) throws Exception {
+        String sql = "SELECT url FROM job_links WHERE id = ?";
+        try (Connection c = DriverManager.getConnection(jdbcUrl);
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, jobLinkId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString(1);
+                }
+                throw new IllegalArgumentException("No job link found with ID: " + jobLinkId);
+            }
         }
     }
 
