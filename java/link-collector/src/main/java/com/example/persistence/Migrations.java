@@ -6,12 +6,16 @@ public final class Migrations {
     private Migrations() {}
 
     public static void migrate(String jdbcUrl) {
+        // Auto-detect database type and use appropriate migrations folder
+        String migrationsPath = jdbcUrl.contains("postgresql")
+            ? "classpath:db/migrations-postgres"
+            : "classpath:db/migrations";
+
+        System.out.println("Using migrations from: " + migrationsPath);
+
         Flyway.configure()
                 .dataSource(jdbcUrl, null, null)
-                .locations(
-                        "classpath:db/migrations",
-                        "filesystem:src/main/resources/db/migrations"
-                )
+                .locations(migrationsPath)
                 .load()
                 .migrate();
     }

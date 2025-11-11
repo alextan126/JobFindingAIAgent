@@ -18,15 +18,18 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
     public void saveAllIgnoreDuplicates(List<JobLink> links) throws Exception {
         try (Connection conn = DriverManager.getConnection(jdbcUrl)) {
             conn.setAutoCommit(false);
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT OR IGNORE INTO job_links(url, host_type, source, discovered_at, status)" +
-                            "VALUES (?, ?, ?, ?, 'new')"
-            )) {
+            // Use database-agnostic INSERT ... ON CONFLICT for PostgreSQL compatibility
+            String sql = jdbcUrl.contains("postgresql")
+                ? "INSERT INTO job_links(url, host_type, source, discovered_at, status) VALUES (?, ?, ?, ?, 'new') ON CONFLICT (url) DO NOTHING"
+                : "INSERT OR IGNORE INTO job_links(url, host_type, source, discovered_at, status) VALUES (?, ?, ?, ?, 'new')";
+
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 for (JobLink l : links) {
                     ps.setString(1, l.url());
                     ps.setString(2, l.hostType());
                     ps.setString(3, l.source());
-                    ps.setObject(4, l.discoveredAt());
+                    // Convert Instant to Timestamp for PostgreSQL compatibility
+                    ps.setTimestamp(4, java.sql.Timestamp.from(l.discoveredAt()));
                     System.out.printf(
                             "DBG insert: url=%s hostType=%s source=%s discoveredAt=%s%n",
                             l.url(), l.hostType(), l.source(), l.discoveredAt()
@@ -72,6 +75,7 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
         } catch (SQLException e) { throw new RuntimeException(e); }
     }
 
+<<<<<<< Updated upstream
     @Override
     public List<JobLinkWithId> findUnscrapedLinks(int limit) throws Exception {
         String sql = """
@@ -138,6 +142,19 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
             ps.setObject(2, Instant.now());
             ps.setInt(3, jobLinkId);
             ps.executeUpdate();
+=======
+    public String getJobLinkUrl(int jobLinkId) throws Exception {
+        String sql = "SELECT url FROM job_links WHERE id = ?";
+        try (Connection c = DriverManager.getConnection(jdbcUrl);
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, jobLinkId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString(1);
+                }
+                throw new IllegalArgumentException("No job link found with ID: " + jobLinkId);
+            }
+>>>>>>> Stashed changes
         }
     }
 
