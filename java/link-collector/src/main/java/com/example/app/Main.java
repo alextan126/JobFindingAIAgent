@@ -4,32 +4,25 @@ import com.example.classify.HostClassifier;
 import com.example.model.JobInfo;
 import com.example.model.JobLink;
 import com.example.model.JobLead;
+import com.example.model.User;
+import com.example.model.Application;
+import com.example.model.JobMatch;
 import com.example.persistence.JobInfoRepository;
 import com.example.persistence.JobLinkRepository;
-import com.example.persistence.JobInfoRepository;
 import com.example.persistence.Migrations;
 import com.example.persistence.SqliteJobInfoRepository;
 import com.example.persistence.SqliteJobLinkRepository;
-import com.example.persistence.SqliteJobInfoRepository;
-import com.example.scrape.GitHubLinkCollector;
-<<<<<<< Updated upstream
-import com.example.scrape.JobInfoScraper;
-import com.example.scrape.OpenAIJobParser;
-import com.example.scrape.ResumeParser;
-import com.example.model.User;
-import com.example.model.Application;
-import com.example.model.JobInfo;
-import com.example.model.JobMatch;
 import com.example.persistence.UserRepository;
 import com.example.persistence.SqliteUserRepository;
 import com.example.persistence.ApplicationRepository;
 import com.example.persistence.SqliteApplicationRepository;
+import com.example.scrape.GitHubLinkCollector;
+import com.example.scrape.JobInfoScraper;
+import com.example.scrape.OpenAIJobParser;
+import com.example.scrape.ResumeParser;
 import com.example.matcher.JobMatcher;
 import com.example.util.PasswordUtil;
 import com.example.api.ApiServer;
-=======
-import com.example.scrape.JobDetailScraper;
->>>>>>> Stashed changes
 import io.github.cdimascio.dotenv.Dotenv;
 
 import java.io.IOException;
@@ -41,19 +34,6 @@ import java.util.List;
 import java.util.Scanner;
 
 public final class Main {
-<<<<<<< Updated upstream
-    // Load .env file if it exists, otherwise use system environment variables
-    private static final Dotenv dotenv = Dotenv.configure()
-            .ignoreIfMissing()  // Don't fail if .env doesn't exist
-            .load();
-
-    private static final String DEFAULT_JDBC =
-            dotenv.get("JOBS_DB_URL", "jdbc:sqlite:jobs.db");
-    private static final boolean DEFAULT_HEADLESS =
-            Boolean.parseBoolean(dotenv.get("HEADLESS", "true"));
-    private static final String OPENAI_API_KEY =
-            dotenv.get("OPENAI_API_KEY");
-=======
     private static final Dotenv dotenv = loadDotenv();
     private static final String DEFAULT_JDBC = getEnv("JOBS_DB_URL", "jdbc:sqlite:jobs.db");
     private static final boolean DEFAULT_HEADLESS = Boolean.parseBoolean(getEnv("HEADLESS", "true"));
@@ -93,7 +73,6 @@ public final class Main {
         // Use default if still null
         return value != null ? value : defaultValue;
     }
->>>>>>> Stashed changes
 
     public static void main(String[] args) throws Exception {
         if (args.length == 0) { printHelp(); return; }
@@ -111,7 +90,6 @@ public final class Main {
                 collectFromGithub(args[1]);
             }
             case "scrape-jobs" -> {
-<<<<<<< Updated upstream
                 int limit = 10; // default
                 if (args.length >= 2) {
                     try {
@@ -177,10 +155,6 @@ public final class Main {
                     }
                 }
                 startApiServer(port);
-=======
-                int limit = args.length >= 2 ? Integer.parseInt(args[1]) : 10;
-                scrapeJobDetails(limit);
->>>>>>> Stashed changes
             }
             default -> {
                 System.err.println("Unknown command: " + args[0]);
@@ -248,7 +222,6 @@ public final class Main {
         }
     }
 
-<<<<<<< Updated upstream
     private static void scrapeJobs(int limit) throws Exception {
         // Validate OpenAI API key
         if (OPENAI_API_KEY == null || OPENAI_API_KEY.isBlank()) {
@@ -642,101 +615,24 @@ public final class Main {
 
         ApiServer server = new ApiServer(DEFAULT_JDBC, OPENAI_API_KEY);
         server.start(port);
-=======
-    private static void scrapeJobDetails(int limit) throws Exception {
-        System.out.println("JDBC=" + DEFAULT_JDBC);
-        System.out.println("Scraping up to " + limit + " job postings...\n");
-
-        // Check for OpenAI API key
-        if (OPENAI_API_KEY == null || OPENAI_API_KEY.isBlank()) {
-            System.err.println("ERROR: OPENAI_API_KEY environment variable not set!");
-            System.err.println("Please set your OpenAI API key in .env file or environment.");
-            System.exit(1);
-        }
-
-        // Ensure migrations are run
-        Migrations.migrate(DEFAULT_JDBC);
-
-        // Initialize repositories
-        JobInfoRepository jobInfoRepo = new SqliteJobInfoRepository(DEFAULT_JDBC);
-        SqliteJobLinkRepository jobLinkRepo = new SqliteJobLinkRepository(DEFAULT_JDBC);
-
-        // Find unscraped job links
-        List<Integer> jobLinkIds = jobInfoRepo.findUnscrapedJobLinkIds(limit);
-
-        if (jobLinkIds.isEmpty()) {
-            System.out.println("No unscraped job links found. All jobs have been scraped!");
-            return;
-        }
-
-        System.out.println("Found " + jobLinkIds.size() + " unscraped job links.\n");
-
-        // Initialize scraper with OpenAI
-        JobDetailScraper scraper = new JobDetailScraper(DEFAULT_HEADLESS, OPENAI_API_KEY);
-
-        int successCount = 0;
-        int failureCount = 0;
-
-        // Scrape each job
-        for (int i = 0; i < jobLinkIds.size(); i++) {
-            int jobLinkId = jobLinkIds.get(i);
-            String url = jobLinkRepo.getJobLinkUrl(jobLinkId);
-
-            System.out.printf("[%d/%d] Job Link ID %d%n", i + 1, jobLinkIds.size(), jobLinkId);
-
-            try {
-                // Scrape the job details
-                JobInfo jobInfo = scraper.scrape(jobLinkId, url);
-
-                // Save to database
-                jobInfoRepo.upsert(jobInfo);
-
-                if (jobInfo.scrapeSuccess()) {
-                    successCount++;
-                } else {
-                    failureCount++;
-                }
-
-                // Rate limiting: wait 2 seconds between requests
-                if (i < jobLinkIds.size() - 1) {
-                    Thread.sleep(2000);
-                }
-
-            } catch (Exception e) {
-                System.err.println("  ✗ Error processing job link " + jobLinkId + ": " + e.getMessage());
-                // Save failure record
-                jobInfoRepo.upsert(JobInfo.failure(jobLinkId));
-                failureCount++;
-            }
-        }
-
-        System.out.println("\n" + "=".repeat(60));
-        System.out.println("Scraping complete!");
-        System.out.println("Success: " + successCount);
-        System.out.println("Failures: " + failureCount);
-        System.out.println("Total: " + jobLinkIds.size());
-        System.out.println("=".repeat(60));
->>>>>>> Stashed changes
     }
+
 
     private static void printHelp() {
         System.out.println("""
         link-collector commands:
           migrate
           collect-github <README_URL>
-<<<<<<< Updated upstream
-          scrape-jobs [LIMIT]     (default limit: 10)
-          scrape-all              (scrape all unscraped job links)
-          create-user             (create a new user account)
+          scrape-jobs [LIMIT]          (default limit: 10, scrape jobs using OpenAI)
+          scrape-all                   (scrape all unscraped job links)
+          scrape-job-details [limit]   (alternative scraper, default limit: 10)
+          create-user                  (create a new user account)
           parse-resume <email> <resume_file>  (parse resume and extract skills)
-          apply <email> <job_id>  (record a job application)
+          apply <email> <job_id>       (record a job application)
           update-status <app_id> <status>  (update application status)
           my-applications <email> [status]  (view your applications, optionally filtered)
-          match-jobs <email> [limit]  (find best matching jobs based on your skills)
-          api-server [PORT]  (start REST API server for frontend, default port: 8080)
-=======
-          scrape-jobs [limit]      (default limit: 10)
->>>>>>> Stashed changes
+          match-jobs <email> [limit]   (find best matching jobs based on your skills)
+          api-server [PORT]            (start REST API server for frontend, default port: 8080)
         Env:
           JOBS_DB_URL      (default: jdbc:sqlite:jobs.db)
           HEADLESS         true|false (default: true)

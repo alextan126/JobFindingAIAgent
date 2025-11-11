@@ -16,6 +16,15 @@ public interface JobInfoRepository {
     void save(JobInfo jobInfo) throws Exception;
 
     /**
+     * Insert or update a JobInfo record (upsert operation).
+     * If a record with the same job_link_id exists, it will be updated.
+     * Otherwise, a new record will be inserted.
+     * @param jobInfo the job information to save or update
+     * @throws Exception if database operation fails
+     */
+    void upsert(JobInfo jobInfo) throws Exception;
+
+    /**
      * Find job infos by job link IDs.
      * @param jobLinkIds list of job link IDs to search for
      * @return list of JobInfo records

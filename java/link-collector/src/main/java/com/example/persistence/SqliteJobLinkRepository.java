@@ -75,7 +75,6 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
         } catch (SQLException e) { throw new RuntimeException(e); }
     }
 
-<<<<<<< Updated upstream
     @Override
     public List<JobLinkWithId> findUnscrapedLinks(int limit) throws Exception {
         String sql = """
@@ -93,12 +92,21 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
             List<JobLinkWithId> results = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
+                    // Handle discovered_at: PostgreSQL returns Timestamp, SQLite returns String
+                    Instant discoveredAt;
+                    Object discoveredAtObj = rs.getObject("discovered_at");
+                    if (discoveredAtObj instanceof Timestamp) {
+                        discoveredAt = ((Timestamp) discoveredAtObj).toInstant();
+                    } else {
+                        discoveredAt = Instant.parse(rs.getString("discovered_at"));
+                    }
+
                     results.add(new JobLinkWithId(
                         rs.getInt("id"),
                         rs.getString("url"),
                         rs.getString("host_type"),
                         rs.getString("source"),
-                        Instant.parse(rs.getString("discovered_at")),
+                        discoveredAt,
                         rs.getString("status")
                     ));
                 }
@@ -142,7 +150,9 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
             ps.setObject(2, Instant.now());
             ps.setInt(3, jobLinkId);
             ps.executeUpdate();
-=======
+        }
+    }
+
     public String getJobLinkUrl(int jobLinkId) throws Exception {
         String sql = "SELECT url FROM job_links WHERE id = ?";
         try (Connection c = DriverManager.getConnection(jdbcUrl);
@@ -154,7 +164,6 @@ public final class SqliteJobLinkRepository implements JobLinkRepository {
                 }
                 throw new IllegalArgumentException("No job link found with ID: " + jobLinkId);
             }
->>>>>>> Stashed changes
         }
     }
 

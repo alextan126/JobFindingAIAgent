@@ -41,8 +41,8 @@ public final class SqliteUserRepository implements UserRepository {
             ps.setString(7, user.preferences());
             ps.setString(8, user.graduationDate());
             ps.setString(9, user.experienceLevel());
-            ps.setObject(10, user.createdAt());
-            ps.setObject(11, user.updatedAt());
+            ps.setTimestamp(10, Timestamp.from(user.createdAt()));
+            ps.setTimestamp(11, Timestamp.from(user.updatedAt()));
 
             ps.executeUpdate();
         }
@@ -107,7 +107,7 @@ public final class SqliteUserRepository implements UserRepository {
             ps.setString(7, user.preferences());
             ps.setString(8, user.graduationDate());
             ps.setString(9, user.experienceLevel());
-            ps.setObject(10, Instant.now());
+            ps.setTimestamp(10, Timestamp.from(Instant.now()));
             ps.setInt(11, user.id());
 
             ps.executeUpdate();
@@ -133,6 +133,54 @@ public final class SqliteUserRepository implements UserRepository {
     }
 
     private User mapResultSetToUser(ResultSet rs) throws SQLException {
+        // Handle created_at: PostgreSQL returns Timestamp, SQLite can return String or Long
+        Instant createdAt;
+        Object createdAtObj = rs.getObject("created_at");
+        if (createdAtObj instanceof Timestamp) {
+            createdAt = ((Timestamp) createdAtObj).toInstant();
+        } else if (createdAtObj instanceof Long) {
+            // SQLite stores as epoch milliseconds
+            createdAt = Instant.ofEpochMilli((Long) createdAtObj);
+        } else if (createdAtObj instanceof Integer) {
+            // SQLite might store as epoch seconds
+            createdAt = Instant.ofEpochSecond(((Integer) createdAtObj).longValue());
+        } else {
+            // SQLite might return timestamp as string of epoch millis
+            String createdAtStr = rs.getString("created_at");
+            try {
+                // Try parsing as epoch milliseconds first
+                long epochMillis = Long.parseLong(createdAtStr);
+                createdAt = Instant.ofEpochMilli(epochMillis);
+            } catch (NumberFormatException e) {
+                // Fall back to ISO-8601 parsing
+                createdAt = Instant.parse(createdAtStr);
+            }
+        }
+
+        // Handle updated_at: PostgreSQL returns Timestamp, SQLite can return String or Long
+        Instant updatedAt;
+        Object updatedAtObj = rs.getObject("updated_at");
+        if (updatedAtObj instanceof Timestamp) {
+            updatedAt = ((Timestamp) updatedAtObj).toInstant();
+        } else if (updatedAtObj instanceof Long) {
+            // SQLite stores as epoch milliseconds
+            updatedAt = Instant.ofEpochMilli((Long) updatedAtObj);
+        } else if (updatedAtObj instanceof Integer) {
+            // SQLite might store as epoch seconds
+            updatedAt = Instant.ofEpochSecond(((Integer) updatedAtObj).longValue());
+        } else {
+            // SQLite might return timestamp as string of epoch millis
+            String updatedAtStr = rs.getString("updated_at");
+            try {
+                // Try parsing as epoch milliseconds first
+                long epochMillis = Long.parseLong(updatedAtStr);
+                updatedAt = Instant.ofEpochMilli(epochMillis);
+            } catch (NumberFormatException e) {
+                // Fall back to ISO-8601 parsing
+                updatedAt = Instant.parse(updatedAtStr);
+            }
+        }
+
         return User.builder()
             .id(rs.getInt("id"))
             .email(rs.getString("email"))
@@ -144,8 +192,8 @@ public final class SqliteUserRepository implements UserRepository {
             .preferences(rs.getString("preferences"))
             .graduationDate(rs.getString("graduation_date"))
             .experienceLevel(rs.getString("experience_level"))
-            .createdAt(Instant.parse(rs.getString("created_at")))
-            .updatedAt(Instant.parse(rs.getString("updated_at")))
+            .createdAt(createdAt)
+            .updatedAt(updatedAt)
             .build();
     }
 }

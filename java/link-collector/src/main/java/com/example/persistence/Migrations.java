@@ -13,10 +13,12 @@ public final class Migrations {
 
         System.out.println("Using migrations from: " + migrationsPath);
 
-        Flyway.configure()
+        Flyway flyway = Flyway.configure()
                 .dataSource(jdbcUrl, null, null)
                 .locations(migrationsPath)
-                .load()
-                .migrate();
+                .validateOnMigrate(false)  // Skip validation - allow checksum mismatches
+                .load();
+
+        flyway.migrate();
     }
 }

@@ -1,0 +1,2 @@
+-- PostgreSQL version of initial migration
+-- This file is intentionally empty as table creation is done in V2
